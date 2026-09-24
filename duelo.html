@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Batalha</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="opacity:0">
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand"><img src="assets/logo.svg" alt=""></div>
+    <nav class="nav" id="sideNav">
+      <a href="dashboard.html">${ICON.home} Início</a>
+      <a href="praticar.html">${ICON.book} Praticar</a>
+      <a href="duelo.html" class="active">${ICON.swords} Batalha <span class="live-tag">LIVE</span></a>
+      <a href="conteudo.html">${ICON.video} Conteúdo</a>
+      <a href="ranking.html">${ICON.trophy} Ranking</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="row">
+        <div class="avatar" data-bind="initials">GM</div>
+        <div>
+          <div class="name" data-bind="name">Gabriel Mendes</div>
+          <div class="meta">Nível <span data-bind="level">12</span> · <span data-bind="streak">7</span>d 🔥</div>
+        </div>
+      </div>
+      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
+      <div class="xp-track"><div class="xp-fill" data-bind="xp-fill" style="width:0"></div></div>
+      <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-head">
+      <div><h1>Modo Batalha</h1><p class="subtitle">Desafie outro estudante em tempo real</p></div>
+    </div>
+
+    <div id="duelStage"></div>
+  </main>
+</div>
+
+<nav class="bottom-nav">
+  <ul>
+    <li><a href="dashboard.html">${ICON.home}<span>Início</span></a></li>
+    <li><a href="praticar.html">${ICON.book}<span>Praticar</span></a></li>
+    <li><a href="duelo.html" class="active">${ICON.swords}<span>Batalha</span></a></li>
+    <li><a href="conteudo.html">${ICON.video}<span>Conteúdo</span></a></li>
+  </ul>
+</nav>
+
+<script src="js/app.js"></script>
+<script src="js/data.js"></script>
+<script>
+  requireLogin();
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
+  document.body.style.opacity = 1;
+  document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
+  let state = renderUserWidget();
+
+  const OPPONENT = { name: "Ana Clara", initials: "AC", level: 14 };
+  const stage = document.getElementById('duelStage');
+
+  let duelQuestions = [], qIndex = 0;
+  let playerScore = 0, botScore = 0;
+  let playerTimes = [], botTimes = [];
+  let timeLeft = 60, timerId = null, botId = null;
+  let questionStartedAt = 0;
+  let duelActive = false;
+
+  function shuffledQuestions(){
+    return [...QUESTIONS].sort(() => Math.random() - 0.5);
+  }
+
+  function renderIntro(){
+    stage.innerHTML = `
+      <div class="duel-intro-card">
+        <h3>Como funciona a batalha</h3>
+        <div class="step-item"><span class="step-num">1</span>Entre na fila e encontre um oponente automaticamente</div>
+        <div class="step-item"><span class="step-num">2</span>Responda o máximo de questões corretas em 60 segundos</div>
+        <div class="step-item"><span class="step-num">3</span>Em empate de questões, vence quem completou mais rápido</div>
+        <div class="step-item"><span class="step-num">4</span>Ganhe XP bônus pela vitória e suba no ranking geral</div>
+      </div>
+      <button class="btn btn-gold btn-block" id="queueBtn" style="padding:16px;font-size:1rem;">Entrar na fila</button>
+    `;
+    document.getElementById('queueBtn').addEventListener('click', renderMatchmaking);
+  }
+
+  function renderMatchmaking(){
+    stage.innerHTML = `
+      <div class="matchmaking-card">
+        <div style="font-weight:700;margin-bottom:6px;">Procurando oponente…</div>
+        <div style="color:rgba(244,239,226,.65);font-size:.85rem;">Isso costuma levar poucos segundos</div>
+      </div>`;
+    setTimeout(renderOpponentFound, 1400);
+  }
+
+  function renderOpponentFound(){
+    const initials = state.initials;
+    stage.innerHTML = `
+      <div class="duel-intro-card">
+        <h3>Como funciona a batalha</h3>
+        <div class="step-item"><span class="step-num">1</span>Entre na fila e encontre um oponente</div>
+        <div class="step-item"><span class="step-num">2</span>Responda o máximo de questões corretas em 60 segundos</div>
+        <div class="step-item"><span class="step-num">3</span>Em empate, vence quem for mais rápido</div>
+        <div class="step-item"><span class="step-num">4</span>Ganhe XP bônus pela vitória</div>
+      </div>
+      <div class="battle-banner" style="text-align:center;">
+        <div class="tag" style="justify-content:center;">Oponente encontrado!</div>
+        <div class="duel-scoreboard" style="margin:18px 0 4px;">
+          <div class="player-panel you" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15);">
+            <div class="avatar" style="margin:0 auto 8px;">${initials}</div>
+            <div class="pname" style="color:#fff;">Você</div>
+            <div class="plevel" style="color:rgba(244,239,226,.6);">Nível ${state.level}</div>
+          </div>
+          <div class="vs-mark" style="color:var(--gold-soft);">VS</div>
+          <div class="player-panel" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15);">
+            <div class="avatar" style="margin:0 auto 8px;background:var(--navy-600);color:#fff;">${OPPONENT.initials}</div>
+            <div class="pname" style="color:#fff;">${OPPONENT.name}</div>
+            <div class="plevel" style="color:rgba(244,239,226,.6);">Nível ${OPPONENT.level}</div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-gold btn-block" id="startBtn" style="padding:16px;font-size:1rem;">Iniciar batalha!</button>
+    `;
+    document.getElementById('startBtn').addEventListener('click', startDuel);
+  }
+
+  function startDuel(){
+    duelQuestions = shuffledQuestions();
+    qIndex = 0; playerScore = 0; botScore = 0; playerTimes = []; botTimes = [];
+    timeLeft = 60; duelActive = true;
+
+    stage.innerHTML = `
+      <div class="duel-timer-wrap"><div class="duel-timer" id="timerBox">01:00</div></div>
+      <div class="duel-scoreboard">
+        <div class="player-panel you">
+          <div class="avatar">${state.initials}</div>
+          <div class="pname">Você</div>
+          <div class="plevel">Nível ${state.level}</div>
+          <div class="score" id="playerScore">0</div>
+          <div class="score-label">acertos</div>
+        </div>
+        <div class="vs-mark">VS</div>
+        <div class="player-panel">
+          <div class="avatar" style="background:var(--navy-800);color:var(--gold);">${OPPONENT.initials}</div>
+          <div class="pname">${OPPONENT.name}</div>
+          <div class="plevel">Nível ${OPPONENT.level}</div>
+          <div class="score" id="botScore">0</div>
+          <div class="score-label">acertos</div>
+        </div>
+      </div>
+      <div class="question-card" id="duelQuestionCard"></div>
+    `;
+
+    renderDuelQuestion();
+    timerId = setInterval(tickTimer, 1000);
+    scheduleBotAnswer();
+  }
+
+  function tickTimer(){
+    timeLeft--;
+    const box = document.getElementById('timerBox');
+    const m = String(Math.floor(Math.max(0,timeLeft)/60)).padStart(2,'0');
+    const sec = String(Math.max(0,timeLeft)%60).padStart(2,'0');
+    if(box){
+      box.textContent = `${m}:${sec}`;
+      if(timeLeft <= 10) box.classList.add('urgent');
+    }
+    if(timeLeft <= 0) endDuel();
+  }
+
+  function scheduleBotAnswer(){
+    if(!duelActive) return;
+    const delay = 2200 + Math.random()*3200;
+    botId = setTimeout(() => {
+      if(!duelActive) return;
+      const willBeCorrect = Math.random() < 0.72;
+      if(willBeCorrect){
+        botScore++;
+        botTimes.push(2 + Math.random()*3);
+        const el = document.getElementById('botScore');
+        if(el) el.textContent = botScore;
+      }
+      scheduleBotAnswer();
+    }, delay);
+  }
+
+  function renderDuelQuestion(){
+    if(!duelActive) return;
+    const q = duelQuestions[qIndex % duelQuestions.length];
+    questionStartedAt = Date.now();
+    const card = document.getElementById('duelQuestionCard');
+    card.innerHTML = `
+      <div class="qhead"><span><span class="tag">${q.subject}</span>${q.topic}</span><span>${q.examTag}</span></div>
+      <div class="qbody">
+        <p class="statement">${q.statement}</p>
+        <div id="duelOptions"></div>
+      </div>
+    `;
+    const optWrap = document.getElementById('duelOptions');
+    q.options.forEach(opt => {
+      const row = document.createElement('div');
+      row.className = 'option';
+      row.dataset.id = opt.id;
+      row.innerHTML = `<span class="letter">${opt.id}</span><span>${opt.text}</span>`;
+      row.addEventListener('click', () => {
+        if(!duelActive) return;
+        optWrap.querySelectorAll('.option').forEach(o => o.style.pointerEvents = 'none');
+        const isCorrect = opt.id === q.correct;
+        row.classList.add(isCorrect ? 'correct' : 'incorrect');
+        if(!isCorrect){
+          optWrap.querySelector(`.option[data-id="${q.correct}"]`).classList.add('correct');
+        }
+        if(isCorrect){
+          playerScore++;
+          playerTimes.push((Date.now() - questionStartedAt)/1000);
+          document.getElementById('playerScore').textContent = playerScore;
+        }
+        qIndex++;
+        setTimeout(renderDuelQuestion, 650);
+      });
+      optWrap.appendChild(row);
+    });
+  }
+
+  function sum(arr){ return arr.reduce((a,b)=>a+b,0); }
+
+  function endDuel(){
+    duelActive = false;
+    clearInterval(timerId);
+    clearTimeout(botId);
+
+    const playerTime = sum(playerTimes), botTime = sum(botTimes);
+    let winner;
+    if(playerScore !== botScore) winner = playerScore > botScore ? 'you' : 'bot';
+    else winner = playerTime <= botTime ? 'you' : 'bot';
+
+    if(winner === 'you'){
+      state.ranking = Math.max(1, state.ranking - 3);
+      state = addXP(state, 40);
+      saveState(state);
+      renderUserWidget();
+    }
+
+    stage.innerHTML = `
+      <div class="duel-result card on-paper">
+        <div class="trophy">${winner === 'you' ? '🏆' : '🤝'}</div>
+        <h2>${winner === 'you' ? 'Você venceu o duelo!' : 'Ana Clara levou essa'}</h2>
+        <p>${winner === 'you' ? 'Você ganhou +40 XP bônus e subiu no ranking geral.' : 'Foi por pouco — pratique mais e tente novamente.'}</p>
+        <div class="duel-scoreboard" style="max-width:480px;margin:0 auto 26px;">
+          <div class="player-panel ${winner==='you' ? 'you' : ''}">
+            <div class="avatar">${state.initials}</div>
+            <div class="pname">Você</div>
+            <div class="score">${playerScore}</div>
+            <div class="score-label">acertos · ${playerTime.toFixed(1)}s</div>
+          </div>
+          <div class="vs-mark">VS</div>
+          <div class="player-panel ${winner==='bot' ? 'you' : ''}">
+            <div class="avatar" style="background:var(--navy-800);color:var(--gold);">${OPPONENT.initials}</div>
+            <div class="pname">${OPPONENT.name}</div>
+            <div class="score">${botScore}</div>
+            <div class="score-label">acertos · ${botTime.toFixed(1)}s</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn btn-gold" id="againBtn">Batalhar novamente</button>
+          <a href="dashboard.html" class="btn btn-outline">Voltar ao início</a>
+        </div>
+      </div>
+    `;
+    document.getElementById('againBtn').addEventListener('click', renderIntro);
+  }
+
+  renderIntro();
+</script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Praticar</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="opacity:0">
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand"><img src="assets/logo.svg" alt=""></div>
+    <nav class="nav" id="sideNav">
+      <a href="dashboard.html">${ICON.home} Início</a>
+      <a href="praticar.html" class="active">${ICON.book} Praticar</a>
+      <a href="duelo.html">${ICON.swords} Batalha <span class="live-tag">LIVE</span></a>
+      <a href="conteudo.html">${ICON.video} Conteúdo</a>
+      <a href="ranking.html">${ICON.trophy} Ranking</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="row">
+        <div class="avatar" data-bind="initials">GM</div>
+        <div>
+          <div class="name" data-bind="name">Gabriel Mendes</div>
+          <div class="meta">Nível <span data-bind="level">12</span> · <span data-bind="streak">7</span>d 🔥</div>
+        </div>
+      </div>
+      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
+      <div class="xp-track"><div class="xp-fill" data-bind="xp-fill" style="width:0"></div></div>
+      <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1>Praticar</h1>
+        <p class="subtitle">Responda e ganhe XP</p>
+      </div>
+      <div class="score-badge" id="scoreBadge">0/0 corretas</div>
+    </div>
+
+    <div class="subject-tabs" id="subjectTabs"></div>
+
+    <div class="question-card" id="questionCard"></div>
+
+    <div style="margin-top:18px;color:var(--ink-muted);font-size:.8rem;text-align:center;">
+      Anúncio · Prepare-se para o vestibular com a melhor plataforma
+    </div>
+  </main>
+</div>
+
+<nav class="bottom-nav">
+  <ul>
+    <li><a href="dashboard.html">${ICON.home}<span>Início</span></a></li>
+    <li><a href="praticar.html" class="active">${ICON.book}<span>Praticar</span></a></li>
+    <li><a href="duelo.html"><span>Batalha</span></a></li>
+    <li><a href="conteudo.html">${ICON.video}<span>Conteúdo</span></a></li>
+  </ul>
+</nav>
+
+<script src="js/app.js"></script>
+<script src="js/data.js"></script>
+<script>
+  requireLogin();
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
+  document.body.style.opacity = 1;
+  document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
+  let state = renderUserWidget();
+
+  const SUBJECTS = ["Todas","Matemática","Português","História","Geografia","Física","Química","Biologia","Inglês"];
+  const urlSubject = new URLSearchParams(window.location.search).get('subject');
+  let currentSubject = SUBJECTS.includes(urlSubject) ? urlSubject : "Todas";
+  let pool = getQuestionsBySubject(currentSubject);
+  let idx = 0;
+  let correctCount = 0, attempted = 0;
+  let answered = false;
+
+  const tabsWrap = document.getElementById('subjectTabs');
+  SUBJECTS.forEach(subj => {
+    const b = document.createElement('button');
+    b.textContent = subj;
+    if(subj === currentSubject) b.classList.add('active');
+    b.addEventListener('click', () => {
+      currentSubject = subj;
+      pool = getQuestionsBySubject(subj);
+      idx = 0;
+      [...tabsWrap.children].forEach(c => c.classList.remove('active'));
+      b.classList.add('active');
+      renderQuestion();
+    });
+    tabsWrap.appendChild(b);
+  });
+
+  function updateScoreBadge(){
+    document.getElementById('scoreBadge').textContent = `${correctCount}/${attempted} corretas`;
+  }
+
+  function renderQuestion(){
+    answered = false;
+    if(pool.length === 0){
+      document.getElementById('questionCard').innerHTML = `<div class="qbody"><p>Nenhuma questão cadastrada para esta disciplina na demonstração. Escolha outra disciplina.</p></div>`;
+      return;
+    }
+    const q = pool[idx % pool.length];
+    const card = document.getElementById('questionCard');
+    card.innerHTML = `
+      <div class="qhead">
+        <span><span class="tag">${q.subject}</span>${q.topic}</span>
+        <span>${q.examTag}</span>
+      </div>
+      <div class="qbody">
+        <p class="statement">${q.statement}</p>
+        <div id="optionsWrap"></div>
+      </div>
+      <div class="feedback-banner" id="feedbackBanner"></div>
+      <div class="qfoot">
+        <div class="links">
+          <button id="skipBtn">Pular ▷</button>
+          <a href="conteudo.html?topic=${q.topicSlug}" id="explainLink">💡 Ver explicação</a>
+        </div>
+        <button class="btn btn-gold" id="answerBtn">Responder</button>
+      </div>
+    `;
+    const optWrap = document.getElementById('optionsWrap');
+    let selected = null;
+    q.options.forEach(opt => {
+      const row = document.createElement('div');
+      row.className = 'option';
+      row.dataset.id = opt.id;
+      row.innerHTML = `<span class="letter">${opt.id}</span><span>${opt.text}</span>`;
+      row.addEventListener('click', () => {
+        if(answered) return;
+        optWrap.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+        row.classList.add('selected');
+        selected = opt.id;
+      });
+      optWrap.appendChild(row);
+    });
+
+    document.getElementById('skipBtn').addEventListener('click', () => { idx++; renderQuestion(); });
+
+    document.getElementById('answerBtn').addEventListener('click', () => {
+      if(answered) { idx++; renderQuestion(); return; }
+      if(!selected){ showToast("Escolha uma alternativa antes de responder."); return; }
+      answered = true;
+      attempted++;
+      const isCorrect = selected === q.correct;
+      if(isCorrect) correctCount++;
+      updateScoreBadge();
+
+      optWrap.querySelectorAll('.option').forEach(o => {
+        if(o.dataset.id === q.correct) o.classList.add('correct');
+        else if(o.dataset.id === selected) o.classList.add('incorrect');
+      });
+
+      const banner = document.getElementById('feedbackBanner');
+      banner.classList.add('show');
+      if(isCorrect){
+        banner.classList.add('correct-fb');
+        banner.textContent = "✓ Resposta correta! +10 XP";
+        state = addXP(state, 10);
+      }else{
+        banner.classList.add('incorrect-fb');
+        banner.textContent = `✕ Resposta incorreta. A alternativa certa é a ${q.correct}. Confira o material de apoio abaixo.`;
+        state.recentErrors = [{ topic:q.topic, subject:q.subject, when:"agora", topicSlug:q.topicSlug }, ...state.recentErrors].slice(0,5);
+        document.getElementById('explainLink').href = `conteudo.html?topic=${q.topicSlug}&from=erro`;
+        document.getElementById('explainLink').style.color = "var(--red)";
+        document.getElementById('explainLink').style.fontWeight = "700";
+      }
+      state.questionsDone = Math.min(state.questionsGoal, state.questionsDone + 1);
+      saveState(state);
+      renderUserWidget();
+
+      document.getElementById('answerBtn').textContent = "Próxima →";
+      document.getElementById('skipBtn').style.visibility = "hidden";
+    });
+  }
+
+  updateScoreBadge();
+  renderQuestion();
+</script>
+</body>
+</html>

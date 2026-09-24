@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Conteúdo</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="opacity:0">
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand"><img src="assets/logo.svg" alt=""></div>
+    <nav class="nav" id="sideNav">
+      <a href="dashboard.html">${ICON.home} Início</a>
+      <a href="praticar.html">${ICON.book} Praticar</a>
+      <a href="duelo.html">${ICON.swords} Batalha <span class="live-tag">LIVE</span></a>
+      <a href="conteudo.html" class="active">${ICON.video} Conteúdo</a>
+      <a href="ranking.html">${ICON.trophy} Ranking</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="row">
+        <div class="avatar" data-bind="initials">GM</div>
+        <div>
+          <div class="name" data-bind="name">Gabriel Mendes</div>
+          <div class="meta">Nível <span data-bind="level">12</span> · <span data-bind="streak">7</span>d 🔥</div>
+        </div>
+      </div>
+      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
+      <div class="xp-track"><div class="xp-fill" data-bind="xp-fill" style="width:0"></div></div>
+      <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-head">
+      <div><h1>Conteúdo</h1><p class="subtitle">Estude por disciplina e assunto</p></div>
+    </div>
+
+    <div id="remediationBanner"></div>
+
+    <div class="content-layout">
+      <div class="card topic-list" id="topicList" style="align-self:start;">
+        <h3 style="font-size:.95rem;margin-bottom:2px;">Tópicos</h3>
+      </div>
+
+      <div>
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <div class="toggle-row">
+          <button class="active" id="tabVideo">${ICON.video} Videoaula</button>
+          <button id="tabResumo">📝 Resumo</button>
+        </div>
+
+        <div id="videoPane">
+          <div class="video-player">
+            <button class="playbtn" id="playBtn">${ICON.play}</button>
+            <span class="hd-tag">HD</span>
+          </div>
+          <div class="video-meta">
+            <div class="vtitle" id="videoTitle">—</div>
+            <div class="vsub" id="videoSub">Vestible · —</div>
+          </div>
+        </div>
+
+        <div id="resumoPane" style="display:none;">
+          <div class="card on-paper resumo-text" id="resumoText"></div>
+        </div>
+
+        <a href="#" class="btn btn-primary btn-block" id="practiceBtn" style="margin-top:4px;">Praticar questões deste tema</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<nav class="bottom-nav">
+  <ul>
+    <li><a href="dashboard.html">${ICON.home}<span>Início</span></a></li>
+    <li><a href="praticar.html">${ICON.book}<span>Praticar</span></a></li>
+    <li><a href="duelo.html">${ICON.swords}<span>Batalha</span></a></li>
+    <li><a href="conteudo.html" class="active">${ICON.video}<span>Conteúdo</span></a></li>
+  </ul>
+</nav>
+
+<script src="js/app.js"></script>
+<script src="js/data.js"></script>
+<script>
+  requireLogin();
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
+  document.body.style.opacity = 1;
+  document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
+  renderUserWidget();
+
+  const params = new URLSearchParams(window.location.search);
+  const fromError = params.get('from') === 'erro';
+  let currentSlug = params.get('topic') || QUESTIONS[0].topicSlug;
+
+  // agrupa tópicos por disciplina, mantendo a ordem de aparição
+  const grouped = [];
+  QUESTIONS.forEach(q => {
+    let g = grouped.find(g => g.subject === q.subject);
+    if(!g){ g = { subject: q.subject, topics: [] }; grouped.push(g); }
+    if(!g.topics.find(t => t.topicSlug === q.topicSlug)){
+      g.topics.push({ topic: q.topic, topicSlug: q.topicSlug });
+    }
+  });
+
+  const topicListEl = document.getElementById('topicList');
+  function renderTopicList(){
+    let html = `<h3 style="font-size:.95rem;margin-bottom:2px;">Tópicos</h3>`;
+    grouped.forEach(g => {
+      html += `<div class="group-label">${g.subject}</div>`;
+      g.topics.forEach(t => {
+        html += `<a href="conteudo.html?topic=${t.topicSlug}" class="topic-item ${t.topicSlug===currentSlug?'active':''}">
+          <div class="t-title">${t.topic.split('—')[0].trim()}</div>
+          <div class="t-sub">${t.topic.includes('—') ? t.topic.split('—')[1].trim() : g.subject}</div>
+        </a>`;
+      });
+    });
+    topicListEl.innerHTML = html;
+  }
+
+  function renderRemediation(q){
+    const wrap = document.getElementById('remediationBanner');
+    if(fromError){
+      wrap.innerHTML = `<div class="remediation-banner">✕ Você errou essa questão! Assista à videoaula ou leia o resumo para entender o tema antes de tentar novamente.</div>`;
+    }else{
+      wrap.innerHTML = "";
+    }
+  }
+
+  function renderContent(){
+    const q = getQuestionByTopicSlug(currentSlug);
+    renderTopicList();
+    renderRemediation(q);
+    document.getElementById('breadcrumb').innerHTML = `${q.subject} <span style="opacity:.5;">›</span> <b>${q.topic}</b>`;
+    document.getElementById('videoTitle').textContent = q.video.title;
+    document.getElementById('videoSub').textContent = `Vestible · ${q.video.duration}`;
+    document.getElementById('resumoText').innerHTML = `<p>${q.resumo}</p>`;
+    const practiceBtn = document.getElementById('practiceBtn');
+    practiceBtn.href = `praticar.html?subject=${encodeURIComponent(q.subject)}`;
+  }
+
+  document.getElementById('tabVideo').addEventListener('click', () => {
+    document.getElementById('tabVideo').classList.add('active');
+    document.getElementById('tabResumo').classList.remove('active');
+    document.getElementById('videoPane').style.display = '';
+    document.getElementById('resumoPane').style.display = 'none';
+  });
+  document.getElementById('tabResumo').addEventListener('click', () => {
+    document.getElementById('tabResumo').classList.add('active');
+    document.getElementById('tabVideo').classList.remove('active');
+    document.getElementById('resumoPane').style.display = '';
+    document.getElementById('videoPane').style.display = 'none';
+  });
+  document.getElementById('playBtn').addEventListener('click', () => {
+    showToast("Reprodução simulada — conecte um provedor de vídeo na versão completa.");
+  });
+
+  renderContent();
+</script>
+</body>
+</html>

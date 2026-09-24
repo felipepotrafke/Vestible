@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Início</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="opacity:0">
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand"><img src="assets/logo.svg" alt=""></div>
+    <nav class="nav" id="sideNav">
+      <a href="dashboard.html" class="active">${ICON.home} Início</a>
+      <a href="praticar.html">${ICON.book} Praticar</a>
+      <a href="duelo.html">${ICON.swords} Batalha <span class="live-tag">LIVE</span></a>
+      <a href="conteudo.html">${ICON.video} Conteúdo</a>
+      <a href="ranking.html">${ICON.trophy} Ranking</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="row">
+        <div class="avatar" data-bind="initials">GM</div>
+        <div>
+          <div class="name" data-bind="name">Gabriel Mendes</div>
+          <div class="meta">Nível <span data-bind="level">12</span> · <span data-bind="streak">7</span>d 🔥</div>
+        </div>
+      </div>
+      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
+      <div class="xp-track"><div class="xp-fill" data-bind="xp-fill" style="width:0"></div></div>
+      <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1>Olá, <span data-bind="name">Gabriel</span>! 👋</h1>
+        <p class="subtitle">Você tem <span data-bind="questions-done">7</span> questões restantes hoje. Continue a sequência!</p>
+      </div>
+      <div class="pill"><span class="fire">🔥</span> <span data-bind="streak">7</span> dias <span class="sub">seguidos</span></div>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card"><div class="label">Ranking ${ICON.crown}</div><div class="value" data-bind="ranking">#234</div></div>
+      <div class="stat-card"><div class="label">Nível atual ${ICON.star}</div><div class="value" data-bind="level">12</div></div>
+      <div class="stat-card"><div class="label">Questões hoje ${ICON.target}</div><div class="value"><span data-bind="questions-done">8</span>/<span data-bind="questions-goal">15</span></div></div>
+      <div class="stat-card"><div class="label">XP acumulado ${ICON.bolt}</div><div class="value" data-bind="xp">847</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3 style="font-size:1.05rem;">Questões de hoje</h3>
+        <span class="small-caps" style="background:var(--cream-soft);border:1px solid var(--line);padding:4px 10px;border-radius:20px;">Grátis: 15/dia</span>
+      </div>
+      <div class="dots" id="dotsRow"></div>
+      <div class="actions-row">
+        <a href="praticar.html" class="btn btn-primary"><span style="width:16px;display:inline-flex;">${ICON.book}</span> Continuar praticando</a>
+        <a href="duelo.html" class="btn btn-gold"><span style="width:16px;display:inline-flex;">${ICON.swords}</span> Batalhar agora</a>
+      </div>
+    </div>
+
+    <div class="battle-banner">
+      <div class="tag"><span style="width:16px;display:inline-flex;">${ICON.swords}</span> MODO BATALHA</div>
+      <h2>Desafie outro estudante em tempo real</h2>
+      <p>Responda mais questões corretas que seu oponente em 60 segundos. Em caso de empate, vence quem for mais rápido.</p>
+      <a href="duelo.html" class="btn btn-gold">Entrar na fila →</a>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <h3 style="font-size:1.02rem;">Erros recentes</h3>
+          <a href="praticar.html" class="see-all">Revise para melhorar</a>
+        </div>
+        <div id="errorsList"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3 style="font-size:1.02rem;">Top ranking</h3>
+          <a href="ranking.html" class="see-all">Ver tudo</a>
+        </div>
+        <div id="rankList"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<nav class="bottom-nav">
+  <ul>
+    <li><a href="dashboard.html" class="active">${ICON.home}<span>Início</span></a></li>
+    <li><a href="praticar.html">${ICON.book}<span>Praticar</span></a></li>
+    <li><a href="duelo.html">${ICON.swords}<span>Batalha</span></a></li>
+    <li><a href="conteudo.html">${ICON.video}<span>Conteúdo</span></a></li>
+  </ul>
+</nav>
+
+<script src="js/app.js"></script>
+<script src="js/data.js"></script>
+<script>
+  requireLogin();
+  // resolve the ${ICON...} placeholders written directly in the markup above
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
+  document.body.style.opacity = 1;
+  document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
+  const s = renderUserWidget();
+
+  // dots
+  const dotsRow = document.getElementById('dotsRow');
+  const total = s.questionsGoal, done = total - s.questionsDone;
+  for(let i=0;i<total;i++){
+    const d = document.createElement('span');
+    d.className = 'dot' + (i < done ? ' done' : '');
+    dotsRow.appendChild(d);
+  }
+
+  // recent errors
+  const errWrap = document.getElementById('errorsList');
+  s.recentErrors.forEach(er => {
+    errWrap.insertAdjacentHTML('beforeend', `
+      <div class="list-row">
+        <div><div class="title">${er.topic}</div><div class="meta">${er.subject} · ${er.when}</div></div>
+        <a class="link" href="conteudo.html?topic=${er.topicSlug}&from=erro">Ver explicação →</a>
+      </div>`);
+  });
+
+  // ranking preview (top 3)
+  const rankWrap = document.getElementById('rankList');
+  RANKING.slice(0,3).forEach((r,i) => {
+    const initials = r.name.split(' ').map(w=>w[0]).slice(0,2).join('');
+    rankWrap.insertAdjacentHTML('beforeend', `
+      <div class="rank-row">
+        <div class="medal">${i===0?'👑':(i+1)}</div>
+        <div><div class="name">${r.name}</div><div class="meta">Nível ${r.level} · ${r.xp} XP</div></div>
+        <div class="xp">🔥${r.streak}d</div>
+      </div>`);
+  });
+</script>
+</body>
+</html>
