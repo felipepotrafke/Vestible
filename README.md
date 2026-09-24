@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎓 Vestible
+# Vestible
 
 ### O sucesso no vestibular é construído questão por questão.
 
