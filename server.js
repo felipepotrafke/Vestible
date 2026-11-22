@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS usuario (
   data_ultimo_reset TEXT,
   data_criacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   foto_cor TEXT NOT NULL DEFAULT 'azul',
+  foto_avatar TEXT,
   tipo TEXT NOT NULL DEFAULT 'aluno' CHECK (tipo IN ('aluno', 'admin'))
 );
 CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);
@@ -137,6 +138,10 @@ if (!usuarioColumns.some((column) => column.name === "tipo")) {
 const usuarioColumnsAfter = db.prepare("PRAGMA table_info(usuario)").all();
 if (!usuarioColumnsAfter.some((column) => column.name === "foto_cor")) {
   db.exec("ALTER TABLE usuario ADD COLUMN foto_cor TEXT NOT NULL DEFAULT 'azul'");
+}
+const usuarioColumnsWithAvatar = db.prepare("PRAGMA table_info(usuario)").all();
+if (!usuarioColumnsWithAvatar.some((column) => column.name === "foto_avatar")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN foto_avatar TEXT");
 }
 const questaoColumns = db.prepare("PRAGMA table_info(questao)").all();
 if (!questaoColumns.some((column) => column.name === "imagem_url")) {
@@ -390,6 +395,7 @@ function publicUser(user) {
     streak: user.streak,
     questoes_feitas_hoje: user.questoes_feitas_hoje,
     foto_cor: user.foto_cor || "azul",
+    foto_avatar: user.foto_avatar || null,
     tipo: user.tipo
   };
 }
@@ -483,12 +489,17 @@ app.get("/api/me", authRequired, (req, res) => {
 app.put("/api/me", authRequired, (req, res) => {
   const nome = String(req.body.nome || "").trim();
   const foto_cor = String(req.body.foto_cor || "").trim().toLowerCase();
+  const foto_avatar = String(req.body.foto_avatar || "").trim().toLowerCase() || null;
   const cores = ["azul", "vermelho", "verde", "roxo", "dourado"];
+  const avatares = ["h1", "h2", "h3", "h4", "h5", "m1", "m2", "m3", "m4", "m5"];
   if (!nome) return res.status(400).json({ error: "O nome não pode ficar vazio." });
   if (nome.length > 100) return res.status(400).json({ error: "O nome deve ter no máximo 100 caracteres." });
   if (!cores.includes(foto_cor)) return res.status(400).json({ error: "Cor de perfil inválida." });
-  db.prepare("UPDATE usuario SET nome = ?, foto_cor = ? WHERE id_usuario = ?")
-    .run(nome, foto_cor, req.user.id_usuario);
+  if (foto_avatar && !avatares.includes(foto_avatar)) {
+    return res.status(400).json({ error: "Avatar de perfil inválido." });
+  }
+  db.prepare("UPDATE usuario SET nome = ?, foto_cor = ?, foto_avatar = ? WHERE id_usuario = ?")
+    .run(nome, foto_cor, foto_avatar, req.user.id_usuario);
   const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(req.user.id_usuario);
   res.json({ user: publicUser(user) });
 });
@@ -790,6 +801,7 @@ function playerPayload(player) {
     nome: player.user.nome,
     nivel: player.user.nivel,
     foto_cor: player.user.foto_cor || "azul",
+    foto_avatar: player.user.foto_avatar || null,
     respostas: player.respostas,
     acertos: player.acertos,
     tempo_total: Number(player.tempo_total.toFixed(2))

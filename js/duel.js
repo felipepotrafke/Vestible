@@ -13,6 +13,12 @@ function initials(name) {
   return String(name || "").split(" ").filter(Boolean).map(word => word[0]).slice(0, 2).join("").toUpperCase();
 }
 
+function avatarMarkup(player, fallbackName) {
+  return player?.foto_avatar
+    ? `<img src="assets/avatar/${encodeURIComponent(player.foto_avatar)}.png" alt="Avatar de ${escapeHtml(player.nome || fallbackName)}">`
+    : initials(player?.nome || fallbackName);
+}
+
 function formatTime(seconds) {
   const value = Math.max(0, Number(seconds) || 0);
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
@@ -84,7 +90,7 @@ function renderMatch(data) {
     </div>
     <div class="duel-scoreboard">
       <div class="player-panel you">
-        <div class="avatar">${initials(me?.nome || state.name)}</div>
+        <div class="avatar">${avatarMarkup(me, state.name)}</div>
         <div class="pname">${escapeHtml(me?.nome || "Você")}</div>
         <div class="plevel">Nível ${me?.nivel || state.level}</div>
         <div class="score" id="myScore">0</div>
@@ -92,7 +98,7 @@ function renderMatch(data) {
       </div>
       <div class="vs-mark">VS</div>
       <div class="player-panel">
-        <div class="avatar">${initials(opponent?.nome)}</div>
+        <div class="avatar">${avatarMarkup(opponent, "Oponente")}</div>
         <div class="pname">${escapeHtml(opponent?.nome || "Oponente")}</div>
         <div class="plevel">Nível ${opponent?.nivel || "--"}</div>
         <div class="score" id="opponentScore">0</div>
@@ -164,14 +170,14 @@ function renderResult(result) {
       <p>Código da sala: <strong>${escapeHtml(result.code)}</strong></p>
       <div class="duel-scoreboard" style="max-width:480px;margin:0 auto 26px">
         <div class="player-panel ${won ? "you" : ""}">
-          <div class="avatar">${initials(me?.nome || state.name)}</div>
+          <div class="avatar">${avatarMarkup(me, state.name)}</div>
           <div class="pname">${escapeHtml(me?.nome || "Você")}</div>
           <div class="score">${me?.acertos || 0}</div>
           <div class="score-label">${me?.respostas || 0} respostas · ${(me?.tempo_total || 0).toFixed(1)}s</div>
         </div>
         <div class="vs-mark">VS</div>
         <div class="player-panel ${!won && !result.empate ? "you" : ""}">
-          <div class="avatar">${initials(opponent?.nome)}</div>
+          <div class="avatar">${avatarMarkup(opponent, "Oponente")}</div>
           <div class="pname">${escapeHtml(opponent?.nome || "Oponente")}</div>
           <div class="score">${opponent?.acertos || 0}</div>
           <div class="score-label">${opponent?.respostas || 0} respostas · ${(opponent?.tempo_total || 0).toFixed(1)}s</div>

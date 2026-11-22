@@ -15,6 +15,8 @@ CREATE TABLE usuario (
     nivel INT NOT NULL DEFAULT 1 CHECK (nivel > 0),
     streak INT NOT NULL DEFAULT 0 CHECK (streak >= 0),
     questoes_feitas_hoje INT NOT NULL DEFAULT 0 CHECK (questoes_feitas_hoje >= 0),
+    foto_cor VARCHAR(20) NOT NULL DEFAULT 'azul',
+    foto_avatar VARCHAR(10) NULL,
     data_ultimo_reset DATE,
     data_criacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

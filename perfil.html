@@ -43,6 +43,23 @@
           <div class="input-wrap"><input id="profileName" name="nome" maxlength="100" required></div>
         </div>
         <div class="field">
+          <label>Imagem de perfil</label>
+          <div class="avatar-options" role="radiogroup" aria-label="Escolha uma imagem de perfil">
+            <button type="button" class="avatar-option avatar-option-initials" data-avatar="" aria-label="Usar iniciais">Aa</button>
+            <button type="button" class="avatar-option" data-avatar="h1" aria-label="Avatar 1"><img src="assets/avatar/h1.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="h2" aria-label="Avatar 2"><img src="assets/avatar/h2.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="h3" aria-label="Avatar 3"><img src="assets/avatar/h3.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="h4" aria-label="Avatar 4"><img src="assets/avatar/h4.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="h5" aria-label="Avatar 5"><img src="assets/avatar/h5.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="m1" aria-label="Avatar 6"><img src="assets/avatar/m1.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="m2" aria-label="Avatar 7"><img src="assets/avatar/m2.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="m3" aria-label="Avatar 8"><img src="assets/avatar/m3.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="m4" aria-label="Avatar 9"><img src="assets/avatar/m4.png" alt=""></button>
+            <button type="button" class="avatar-option" data-avatar="m5" aria-label="Avatar 10"><img src="assets/avatar/m5.png" alt=""></button>
+          </div>
+          <input type="hidden" name="foto_avatar" id="profileAvatar">
+        </div>
+        <div class="field">
           <label>Cor da foto de perfil</label>
           <div class="color-options">
             <button type="button" class="color-option azul" data-color="azul" title="Azul"></button>
@@ -76,9 +93,13 @@
   function updatePreview(){
     const nome = document.getElementById("profileName").value.trim() || "Seu nome";
     const cor = document.getElementById("profileColor").value;
+    const avatar = document.getElementById("profileAvatar").value;
     const preview = document.getElementById("profilePreview");
-    preview.textContent = nome.split(" ").filter(Boolean).map(w => w[0]).slice(0,2).join("").toUpperCase();
+    preview.textContent = avatar ? "" : nome.split(" ").filter(Boolean).map(w => w[0]).slice(0,2).join("").toUpperCase();
     preview.className = `profile-avatar ${cor}`;
+    preview.innerHTML = avatar
+      ? `<img src="assets/avatar/${encodeURIComponent(avatar)}.png" alt="Avatar de ${escapeHtml(nome)}">`
+      : preview.textContent;
     document.getElementById("previewName").textContent = nome;
   }
 
@@ -88,6 +109,7 @@
     applyProfileVisuals(currentUser);
     document.getElementById("profileName").value = currentUser.nome;
     document.getElementById("profileColor").value = currentUser.foto_cor || "azul";
+    document.getElementById("profileAvatar").value = currentUser.foto_avatar || "";
     document.getElementById("previewEmail").textContent = currentUser.email;
     document.querySelectorAll(".color-option").forEach(button => {
       button.classList.toggle("selected", button.dataset.color === currentUser.foto_cor);
@@ -95,6 +117,15 @@
         document.querySelectorAll(".color-option").forEach(option => option.classList.remove("selected"));
         button.classList.add("selected");
         document.getElementById("profileColor").value = button.dataset.color;
+        updatePreview();
+      });
+    });
+    document.querySelectorAll(".avatar-option").forEach(button => {
+      button.classList.toggle("selected", button.dataset.avatar === (currentUser.foto_avatar || ""));
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".avatar-option").forEach(option => option.classList.remove("selected"));
+        button.classList.add("selected");
+        document.getElementById("profileAvatar").value = button.dataset.avatar;
         updatePreview();
       });
     });
@@ -106,8 +137,9 @@
     event.preventDefault();
     const nome = document.getElementById("profileName").value.trim();
     const foto_cor = document.getElementById("profileColor").value;
+    const foto_avatar = document.getElementById("profileAvatar").value || null;
     try{
-      const data = await api("/api/me", {method:"PUT", body:JSON.stringify({nome, foto_cor})});
+      const data = await api("/api/me", {method:"PUT", body:JSON.stringify({nome, foto_cor, foto_avatar})});
       currentUser = data.user;
       localStorage.setItem("vestible_user", JSON.stringify(currentUser));
       applyProfileVisuals(currentUser);
