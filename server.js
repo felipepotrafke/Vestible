@@ -4,6 +4,9 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Database = require("better-sqlite3");
+const multer = require("multer");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || "vestible-desenvolvimento-segredo";
@@ -14,6 +17,18 @@ fs.mkdirSync(path.dirname(dbFile), { recursive: true });
 const db = new Database(dbFile);
 db.pragma("foreign_keys = ON");
 db.pragma("journal_mode = WAL");
+fs.mkdirSync(path.join(ROOT, "uploads"), { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: path.join(ROOT, "uploads"),
+    filename: (req, file, cb) => {
+      const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname).toLowerCase()}`;
+      cb(null, safeName);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype))
+});
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS usuario (
@@ -27,6 +42,7 @@ CREATE TABLE IF NOT EXISTS usuario (
   questoes_feitas_hoje INTEGER NOT NULL DEFAULT 0 CHECK (questoes_feitas_hoje >= 0),
   data_ultimo_reset TEXT,
   data_criacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  foto_cor TEXT NOT NULL DEFAULT 'azul',
   tipo TEXT NOT NULL DEFAULT 'aluno' CHECK (tipo IN ('aluno', 'admin'))
 );
 CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);
@@ -59,6 +75,7 @@ CREATE TABLE IF NOT EXISTS questao (
   alternativa_c TEXT NOT NULL,
   alternativa_d TEXT NOT NULL,
   alternativa_e TEXT,
+  imagem_url TEXT,
   resposta_correta TEXT NOT NULL CHECK (resposta_correta IN ('A','B','C','D','E')),
   disciplina TEXT NOT NULL,
   tema TEXT NOT NULL,
@@ -116,6 +133,14 @@ CREATE TABLE IF NOT EXISTS questao_material (
 const usuarioColumns = db.prepare("PRAGMA table_info(usuario)").all();
 if (!usuarioColumns.some((column) => column.name === "tipo")) {
   db.exec("ALTER TABLE usuario ADD COLUMN tipo TEXT NOT NULL DEFAULT 'aluno' CHECK (tipo IN ('aluno','admin'))");
+}
+const usuarioColumnsAfter = db.prepare("PRAGMA table_info(usuario)").all();
+if (!usuarioColumnsAfter.some((column) => column.name === "foto_cor")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN foto_cor TEXT NOT NULL DEFAULT 'azul'");
+}
+const questaoColumns = db.prepare("PRAGMA table_info(questao)").all();
+if (!questaoColumns.some((column) => column.name === "imagem_url")) {
+  db.exec("ALTER TABLE questao ADD COLUMN imagem_url TEXT");
 }
 
 const questionCount = db.prepare("SELECT COUNT(*) AS count FROM questao").get().count;
@@ -208,8 +233,132 @@ if (questionCount === 0) {
   seed();
 }
 
+if (db.prepare("SELECT COUNT(*) AS count FROM questao").get().count < 60) {
+  const addRealQuestions = db.transaction(() => {
+    const insertMaterial = db.prepare(`
+      INSERT INTO material_apoio (titulo, link_video, texto_explicativo, disciplina, tema)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const insertQuestion = db.prepare(`
+      INSERT INTO questao
+      (enunciado, alternativa_a, alternativa_b, alternativa_c, alternativa_d, alternativa_e, resposta_correta, disciplina, tema, dificuldade)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const link = db.prepare("INSERT OR IGNORE INTO questao_material (id_questao, id_material) VALUES (?, ?)");
+    const extras = [
+      ["Matemática","Porcentagem","Uma camisa custa R$ 80,00 e recebe desconto de 25%. Qual é o preço final?","R$ 20,00","R$ 55,00","R$ 60,00","R$ 65,00","R$ 75,00","C","Facil","Porcentagem: exercícios resolvidos","Uma porcentagem representa uma fração de 100. Um desconto de 25% sobre R$ 80 equivale a R$ 20; por isso, R$ 80 menos R$ 20 resulta em R$ 60."],
+      ["Matemática","Razão e proporção","Se 3 canetas custam R$ 9, quanto custam 7 canetas?","R$ 18","R$ 21","R$ 24","R$ 27","R$ 30","B","Facil","Razão e proporção","A razão entre quantidade e preço é constante. Como cada caneta custa R$ 3, sete canetas custam R$ 21."],
+      ["Matemática","Equações","Qual é o valor de x em 2x + 6 = 18?","4","6","8","10","12","B","Medio","Equações do primeiro grau","Subtraindo 6 dos dois lados: 2x = 12. Dividindo por 2: x = 6."],
+      ["Matemática","Geometria","Um triângulo possui lados medindo 3 cm, 4 cm e 5 cm. Ele é:","Obtuso","Equilátero","Retângulo","Isósceles","Acutângulo","C","Medio","Teorema de Pitágoras","Como 3² + 4² = 5², o triângulo é retângulo."],
+      ["Matemática","Estatística","Em uma amostra com valores 2, 4, 6 e 8, a média aritmética é:","4","5","6","7","8","B","Facil","Média aritmética","A média é a soma dos valores dividida pelo número de valores: (2+4+6+8)/4 = 5."],
+      ["Matemática","Probabilidade","Em um dado comum, a probabilidade de sair um número par é:","1/6","1/4","1/3","1/2","2/3","D","Medio","Probabilidade em dados","Há 3 resultados pares entre 6 resultados possíveis: 3/6 = 1/2."],
+      ["Física","Leis de Newton","Qual lei explica a resistência de um corpo a mudar seu estado de movimento?","Primeira Lei","Segunda Lei","Terceira Lei","Lei da gravitação","Lei da conservação","A","Medio","Primeira Lei de Newton","A Primeira Lei de Newton afirma que um corpo permanece em repouso ou movimento uniforme enquanto a força resultante sobre ele é nula."],
+      ["Física","Energia","Uma lâmpada de 100 W funcionando por 10 segundos consome:","10 J","100 J","1000 J","10000 J","100000 J","C","Medio","Potência e energia elétrica","Energia elétrica é potência multiplicada pelo tempo: E = 100 W × 10 s = 1000 J."],
+      ["Física","Pressão","A unidade de pressão no SI é:","Newton","Pascal","Joule","Watt","Coulomb","B","Facil","Pressão hidrostática e Pascal","No Sistema Internacional, pressão é medida em pascal (Pa), equivalente a newton por metro quadrado."],
+      ["Física","Óptica","Um espelho plano produz uma imagem:","Real e ampliada","Virtual e igual ao objeto","Real e invertida","Virtual e menor","Infinita","B","Facil","Espelhos planos","Em um espelho plano, a imagem é virtual, direta e do mesmo tamanho que o objeto."],
+      ["Física","Termologia","A temperatura de ebulição da água pura ao nível do mar é aproximadamente:","50 °C","75 °C","100 °C","120 °C","150 °C","C","Facil","Mudanças de fase da água","Ao nível do mar, a pressão atmosférica é cerca de 1 atm e a água pura entra em ebulição aproximadamente a 100 °C."],
+      ["Física","Ondas","O som se propaga mais rapidamente em:","Vácuo","Gases raros","Ar","Líquidos","Sólidos","E","Medio","Propagação do som","O som não se propaga no vácuo e costuma viajar mais rápido em sólidos, devido à maior proximidade entre suas partículas."],
+      ["História","Brasil República","Em que ano a República foi proclamada no Brasil?","1888","1889","1891","1930","1945","B","Facil","A Proclamação da República","A República foi proclamada em 15 de novembro de 1889 pelo Marechal Deodoro da Fonseca."],
+      ["História","Independência","A independência do Brasil ocorreu em:","1808","1822","1889","1930","1945","B","Facil","Independência do Brasil","D. Pedro declarou a independência às margens do rio Ipiranga em 7 de setembro de 1822."],
+      ["História","Segunda Guerra","Qual país atacou Pearl Harbor em 1941?","Alemanha","Itália","Japão","União Soviética","Canadá","C","Medio","Segunda Guerra Mundial","O ataque japonês a Pearl Harbor ocorreu em dezembro de 1941 e levou os Estados Unidos a entrar diretamente na guerra."],
+      ["História","Guerra Fria","A Guerra Fria foi marcada principalmente pela disputa entre:","Brasil e Portugal","EUA e União Soviética","França e Espanha","China e Índia","Alemanha e Itália","B","Medio","Guerra Fria","A Guerra Fria foi um confronto político, militar e ideológico liderado pelos Estados Unidos e pela União Soviética, sem guerra direta em larga escala entre eles."],
+      ["História","Abolição","O movimento abolicionista no Brasil terminou legalmente com:","Lei dos Sexagenários","Lei Eusébio de Queirós","Lei Áurea","Lei do Ventre Livre","Lei de Terras","C","Facil","A abolição no Brasil","A Lei Áurea, assinada pela Princesa Isabel em 13 de maio de 1888, extinguiu a escravidão no Brasil."],
+      ["História","Constituição","A atual Constituição brasileira foi promulgada em:","1964","1985","1988","1994","2002","C","Medio","Constituição de 1988","A Constituição Federal foi promulgada em 5 de outubro de 1988 e entrou em vigor na mesma data."],
+      ["Português","Interpretação","Em \"Ela chegou cedo\", a expressão \"cedo\" indica:","lugar","tempo","modo","causa","intensidade","B","Facil","Advérbio de tempo","A palavra \"cedo\" indica o tempo em que a ação ocorreu e funciona como advérbio de tempo."],
+      ["Português","Pontuação","Os dois-pontos são usados, entre outras funções, para:","terminar uma frase","introduzir uma explicação","separar sílabas","indicar som nasal","trocar de linha","B","Facil","Uso dos dois-pontos","Os dois-pontos introduzem explicação, enumeração, fala ou esclarecimento de uma ideia anterior."],
+      ["Português","Verbos","Em \"Nós estudaremos amanhã\", o verbo está no:","presente","pretérito perfeito","pretérito imperfeito","futuro do presente","futuro do pretérito","D","Medio","Tempos verbais","A forma \"estudaremos\" indica uma ação futura em relação ao momento da fala."],
+      ["Português","Concordância","Assinale a frase com concordância correta:","Fazem dois anos","Haviam pessoas","Houve problemas","Existe muitas causas","Devem haver soluções","C","Medio","Concordância verbal","O verbo haver no sentido de existir é impessoal: \"Houve problemas\"."],
+      ["Português","Literatura","\"Morte e Vida Severina\" é uma obra de:","Machado de Assis","Carlos Drummond","João Cabral de Melo Neto","Clarice Lispector","Graciliano Ramos","C","Medio","Literatura brasileira","João Cabral de Melo Neto escreveu o poema dramático \"Morte e Vida Severina\"."],
+      ["Português","Semântica","A palavra que substitui \"alegre\" sem alterar o sentido é:","triste","contente","calado","confuso","cego","B","Facil","Sinônimos","Contente é sinônimo de alegre em contextos comuns."],
+      ["Geografia","População","O processo de saída da população do campo para as cidades é chamado:","imigração","êxodo rural","emigração","migração pendular","urbanização espontânea","B","Facil","Êxodo rural","Êxodo rural é a migração da população rural em direção às cidades."],
+      ["Geografia","Cartografia","Em um mapa, a legenda serve para:","indicar a data","explicar os símbolos","mostrar a altitude apenas","definir o título","medir a distância","B","Facil","Elementos dos mapas","A legenda explica o significado dos símbolos, cores e convenções presentes no mapa."],
+      ["Geografia","Clima","Qual fator modifica o clima por causar temperaturas menores em altitudes maiores?","latitude","altitude","longitude","maritimidade","vegetação","B","Facil","Fatores climáticos","A altitude influencia a temperatura: em geral, quanto maior a altitude, menor a temperatura."],
+      ["Geografia","Brasil","O maior rio em volume de água do mundo é:","Nilo","Mississipi","Yangtzé","Amazonas","Danúbio","D","Medio","Geografia da América do Sul","O rio Amazonas possui a maior vazão média do mundo."],
+      ["Geografia","Globalização","Um exemplo típico de integração econômica internacional é:","Mercosul","Enxurrada","Êxodo rural","Afloramento rochoso","Sedimentação","A","Medio","Globalização e comércio","O Mercosul é um bloco econômico regional criado para facilitar a integração comercial entre países membros."],
+      ["Geografia","Meio ambiente","O aquecimento global está associado principalmente ao aumento de:","gases de efeito estufa","oxigênio puro","gelo polar","nutrientes do solo","movimentos tectônicos","A","Medio","Mudanças climáticas","O aumento de gases como CO₂ intensifica o efeito estufa e contribui para o aquecimento global."]
+    ];
+    for (const item of extras) {
+      const [disciplina, tema, enunciado, a, b, c, d, e, correta, dificuldade, videoTitle, resumo] = item;
+      const material = insertMaterial.run(
+        videoTitle,
+        `https://www.youtube.com/results?search_query=${encodeURIComponent(`${disciplina} ${tema} vestibular`)}`,
+        resumo,
+        disciplina,
+        tema
+      );
+      const question = insertQuestion.run(enunciado, a, b, c, d, e, correta, disciplina, tema, dificuldade);
+      link.run(question.lastInsertRowid, material.lastInsertRowid);
+    }
+  });
+  addRealQuestions();
+}
+
+// Reorganiza os materiais iniciais com nomes específicos e explicações completas.
+const materialCatalog = {
+  "Matemática": [
+    ["Função de primeiro grau", "Função afim", "Uma função de primeiro grau tem a forma f(x)=ax+b, com a ≠ 0. O valor a representa a taxa de variação e b indica o ponto em que a reta corta o eixo y. Para resolver questões, substitua os valores dados em f(x), determine a lei da função e interprete o gráfico como uma reta."],
+    ["Função de segundo grau", "Função quadrática", "Uma função quadrática é escrita como f(x)=ax²+bx+c. Seus pontos importantes são as raízes, o vértice e o eixo de simetria. Quando a>0, a parábola tem concavidade para cima; quando a<0, para baixo."],
+    ["Potências e raízes", "Operações algébricas", "Potência representa multiplicações sucessivas da mesma base. Raiz é a operação inversa da potência. Observe as propriedades de potências, radicais equivalentes e simplificações antes de resolver expressões."],
+    ["Equações do segundo grau", "Equações", "A equação ax²+bx+c=0 pode ser resolvida pela fórmula de Bhaskara. O discriminante Δ=b²-4ac indica se existem duas raízes reais, uma raiz real ou nenhuma raiz real."],
+    ["Porcentagem e juros", "Porcentagem", "Porcentagem representa uma parte de 100. Para calcular acréscimos ou descontos, multiplique o valor pela taxa decimal e adicione ou subtraia o resultado. Em juros, diferencie juros simples de juros compostos."],
+    ["Sequências numéricas", "Progressões", "Sequências podem seguir padrões aritméticos ou geométricos. Na progressão aritmética, soma-se uma razão constante; na geométrica, multiplica-se por uma razão constante."]
+  ],
+  "Física": [
+    ["Cinemática: movimento uniforme", "Movimento uniforme", "No movimento uniforme, a velocidade é constante. A posição pode ser calculada por S=S₀+vt. Para interpretar gráficos, analise a inclinação da reta da posição em função do tempo."],
+    ["Cinemática: movimento acelerado", "Movimento uniformemente variado", "No movimento uniformemente variado, a aceleração é constante. Use v=v₀+at e S=S₀+v₀t+at²/2. Identifique os dados do enunciado e escolha a equação adequada."],
+    ["Força e leis de Newton", "Dinâmica", "As leis de Newton relacionam força, massa e movimento. A força resultante determina a aceleração pela equação F=m·a. Desenhe as forças atuantes antes de aplicar a segunda lei."],
+    ["Densidade e pressão", "Propriedades físicas", "Densidade é massa dividida pelo volume. Pressão é força dividida pela área. Ambas ajudam a explicar o comportamento de materiais e fluidos."],
+    ["Energia e trabalho", "Energia", "Trabalho é força aplicada ao longo de uma distância. Energia cinética depende da massa e do quadrado da velocidade. O princípio da conservação da energia permite comparar estados diferentes do sistema."],
+    ["Ondas e óptica", "Ondas", "Ondas são perturbações que transportam energia. Frequência, comprimento de onda e velocidade se relacionam pela equação v=λf. Em óptica, diferencie espelhos, lentes e formação de imagens."]
+  ],
+  "História": [
+    ["Brasil colonial", "Período colonial", "O Brasil colonial foi marcado pela colonização portuguesa, economias exportadoras, escravidão e administração indireta. Estude a relação entre engenhos, mineração e formação territorial."],
+    ["Primeiro Reinado", "Brasil independente", "Após a independência de 1822, o Primeiro Reinado enfrentou conflitos políticos e disputas regionais. A crise terminou com a abdicação de Dom Pedro I em 1831."],
+    ["Segundo Reinado", "Império", "O Segundo Reinado teve estabilidade política durante parte do período, com café, urbanização e escravidão. A Guerra do Paraguai e o movimento abolicionista contribuíram para sua crise."],
+    ["República Velha", "Primeira República", "Na República Velha predominaram o coronelismo, o voto controlado e a política do café-com-leite. Estude revoltas sociais e movimentos contestatórios."],
+    ["Era Vargas", "Brasil moderno", "Getúlio Vargas governou em contextos autoritários e democráticos. Suas políticas influenciaram indústria, trabalho, centralização administrativa e educação."],
+    ["Ditadura militar", "Brasil contemporâneo", "A ditadura civil-militar ocorreu de 1964 a 1985. Analise repressão política, propaganda, crescimento econômico, dívida externa e movimentos de resistência."]
+  ],
+  "Português": [
+    ["Interpretação de texto", "Compreensão textual", "A interpretação depende da leitura atenta do texto e do contexto. Diferencie informação explícita, inferência, tese e argumento. Confirme cada alternativa no texto antes de responder."],
+    ["Classes de palavras", "Gramática", "Substantivos, adjetivos, verbos, advérbios e pronomes exercem funções diferentes. Identifique a classe pela relação sintática e pelo sentido na frase."],
+    ["Concordância verbal", "Sintaxe", "Na concordância verbal, o verbo se flexiona conforme o sujeito. Casos especiais exigem atenção ao sujeito composto, a expressões partitivas e aos verbos impessoais."],
+    ["Figuras de linguagem", "Estilística", "Metáfora, metonímia, antítese, hipérbole e personificação criam sentidos expressivos. Identifique a relação existente entre os elementos comparados ou substituídos."],
+    ["Literatura modernista", "Literatura brasileira", "O Modernismo brasileiro rompeu com modelos tradicionais e valorizou a linguagem brasileira, a crítica social e novas formas. Estude Mário de Andrade, Oswald de Andrade e outros autores."],
+    ["Crase e pontuação", "Norma culta", "A crase é a fusão da preposição a com o artigo a ou com pronomes demonstrativos. Pontuação organiza as relações sintáticas e ajuda a interpretar o texto."]
+  ],
+  "Geografia": [
+    ["Cartografia", "Representação do espaço", "Mapas utilizam escala, legenda, orientação e projeção. Entenda como medir distâncias e interpretar símbolos. Projeções podem distorcer áreas, formas ou distâncias."],
+    ["Climatologia", "Clima", "Clima é o padrão atmosférico de uma região ao longo do tempo. Latitude, altitude, maritimidade e massas de ar influenciam temperaturas e chuvas."],
+    ["Geografia urbana", "Urbanização", "Urbanização é o crescimento das cidades e da população urbana. Analise metropolização, segregação socioespacial, transporte e problemas ambientais urbanos."],
+    ["Meio ambiente", "Sustentabilidade", "Questões ambientais envolvem uso dos recursos naturais, poluição, mudanças climáticas e conservação. Relacione causas locais a impactos globais."],
+    ["Demografia", "População", "Demografia estuda natalidade, mortalidade, migrações e estrutura populacional. Pirâmides etárias ajudam a interpretar crescimento e envelhecimento."],
+    ["Globalização", "Economia mundial", "A globalização integra mercados, culturas e tecnologias por fluxos financeiros, comerciais e informacionais. Também aprofunda desigualdades regionais."]
+  ]
+};
+for (const [disciplina, entries] of Object.entries(materialCatalog)) {
+  const rows = db.prepare("SELECT id_material FROM material_apoio WHERE disciplina = ? AND id_material <= 30 ORDER BY id_material").all(disciplina);
+  rows.forEach((row, index) => {
+    const entry = entries[index];
+    if (!entry) return;
+    const [titulo, tema, resumo] = entry;
+    db.prepare(`
+      UPDATE material_apoio
+      SET titulo = ?, tema = ?, texto_explicativo = ?, link_video = ?
+      WHERE id_material = ?
+    `).run(
+      titulo,
+      tema,
+      resumo,
+      `https://www.youtube.com/results?search_query=${encodeURIComponent(`${titulo} ${disciplina} vestibular aula`)}`,
+      row.id_material
+    );
+  });
+}
+
 const app = express();
 app.use(express.json());
+app.use("/uploads", express.static(path.join(ROOT, "uploads")));
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -240,6 +389,7 @@ function publicUser(user) {
     nivel: user.nivel,
     streak: user.streak,
     questoes_feitas_hoje: user.questoes_feitas_hoje,
+    foto_cor: user.foto_cor || "azul",
     tipo: user.tipo
   };
 }
@@ -330,6 +480,19 @@ app.get("/api/me", authRequired, (req, res) => {
   res.json({ user: publicUser(req.user), desempenho: performance });
 });
 
+app.put("/api/me", authRequired, (req, res) => {
+  const nome = String(req.body.nome || "").trim();
+  const foto_cor = String(req.body.foto_cor || "").trim().toLowerCase();
+  const cores = ["azul", "vermelho", "verde", "roxo", "dourado"];
+  if (!nome) return res.status(400).json({ error: "O nome não pode ficar vazio." });
+  if (nome.length > 100) return res.status(400).json({ error: "O nome deve ter no máximo 100 caracteres." });
+  if (!cores.includes(foto_cor)) return res.status(400).json({ error: "Cor de perfil inválida." });
+  db.prepare("UPDATE usuario SET nome = ?, foto_cor = ? WHERE id_usuario = ?")
+    .run(nome, foto_cor, req.user.id_usuario);
+  const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(req.user.id_usuario);
+  res.json({ user: publicUser(user) });
+});
+
 app.get("/api/dashboard", authRequired, (req, res) => {
   const performance = db.prepare("SELECT * FROM desempenho WHERE id_usuario = ?").get(req.user.id_usuario);
   const ranking = db.prepare("SELECT id_usuario, nome, xp, nivel, streak FROM usuario ORDER BY xp DESC").all();
@@ -366,6 +529,7 @@ app.get("/api/questoes", authRequired, (req, res) => {
     alternativa_c: q.alternativa_c,
     alternativa_d: q.alternativa_d,
     alternativa_e: q.alternativa_e,
+    imagem_url: q.imagem_url,
     disciplina: q.disciplina,
     tema: q.tema,
     dificuldade: q.dificuldade
@@ -503,7 +667,7 @@ app.delete("/api/admin/materiais/:id", authRequired, adminRequired, (req, res) =
   res.json({ ok: true });
 });
 
-app.post("/api/admin/questoes", authRequired, adminRequired, (req, res) => {
+app.post("/api/admin/questoes", authRequired, adminRequired, upload.single("imagem"), (req, res) => {
   const q = req.body;
   if (!q.enunciado || !q.alternativa_a || !q.alternativa_b || !q.alternativa_c || !q.alternativa_d ||
       !q.resposta_correta || !q.disciplina || !q.tema) {
@@ -513,10 +677,11 @@ app.post("/api/admin/questoes", authRequired, adminRequired, (req, res) => {
     const result = db.prepare(`
       INSERT INTO questao
       (enunciado, alternativa_a, alternativa_b, alternativa_c, alternativa_d, alternativa_e,
-       resposta_correta, disciplina, tema, dificuldade)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       resposta_correta, disciplina, tema, dificuldade, imagem_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(q.enunciado, q.alternativa_a, q.alternativa_b, q.alternativa_c, q.alternativa_d,
-      q.alternativa_e || null, q.resposta_correta, q.disciplina, q.tema, q.dificuldade || "Medio");
+      q.alternativa_e || null, q.resposta_correta, q.disciplina, q.tema, q.dificuldade || "Medio",
+      req.file ? `/uploads/${req.file.filename}` : (q.imagem_url || null));
     if (q.id_material) {
       db.prepare("INSERT OR IGNORE INTO questao_material (id_questao, id_material) VALUES (?, ?)")
         .run(result.lastInsertRowid, Number(q.id_material));
@@ -526,16 +691,19 @@ app.post("/api/admin/questoes", authRequired, adminRequired, (req, res) => {
   res.status(201).json(resultado());
 });
 
-app.put("/api/admin/questoes/:id", authRequired, adminRequired, (req, res) => {
+app.put("/api/admin/questoes/:id", authRequired, adminRequired, upload.single("imagem"), (req, res) => {
   const id = Number(req.params.id);
   const q = req.body;
   const atualizar = db.transaction(() => {
     db.prepare(`
       UPDATE questao SET enunciado = ?, alternativa_a = ?, alternativa_b = ?, alternativa_c = ?,
-      alternativa_d = ?, alternativa_e = ?, resposta_correta = ?, disciplina = ?, tema = ?, dificuldade = ?
+      alternativa_d = ?, alternativa_e = ?, resposta_correta = ?, disciplina = ?, tema = ?, dificuldade = ?,
+      imagem_url = CASE WHEN ? IS NOT NULL THEN ? ELSE imagem_url END
       WHERE id_questao = ?
     `).run(q.enunciado, q.alternativa_a, q.alternativa_b, q.alternativa_c, q.alternativa_d,
-      q.alternativa_e || null, q.resposta_correta, q.disciplina, q.tema, q.dificuldade, id);
+      q.alternativa_e || null, q.resposta_correta, q.disciplina, q.tema, q.dificuldade,
+      req.file ? `/uploads/${req.file.filename}` : (q.imagem_url || null),
+      req.file ? `/uploads/${req.file.filename}` : (q.imagem_url || null), id);
     if (q.id_material) {
       db.prepare("DELETE FROM questao_material WHERE id_questao = ?").run(id);
       db.prepare("INSERT INTO questao_material (id_questao, id_material) VALUES (?, ?)")
@@ -566,12 +734,363 @@ app.get("/admin.html", authRequired, adminRequired, (req, res) => {
   res.sendFile(path.join(ROOT, "admin.html"));
 });
 
+app.get("/perfil.html", authRequired, (req, res) => {
+  res.sendFile(path.join(ROOT, "perfil.html"));
+});
+
+app.get("/api/duelo/:code", (req, res) => {
+  const match = activeDuels.get(String(req.params.code).toUpperCase());
+  if (!match) return res.status(404).json({ error: "Sala não encontrada." });
+  res.json(getScreenState(match));
+});
+
+app.get("/telao.html", (req, res) => {
+  res.sendFile(path.join(ROOT, "telao.html"));
+});
+
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, { cors: { origin: false } });
+
+const duelQueues = new Map();
+const activeDuels = new Map();
+
+function createRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code;
+  do {
+    code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  } while (activeDuels.has(code));
+  return code;
+}
+
+function getQuestionsForDuel() {
+  return db.prepare(`
+    SELECT id_questao, enunciado, alternativa_a, alternativa_b, alternativa_c,
+           alternativa_d, alternativa_e, resposta_correta, disciplina, tema, dificuldade, imagem_url
+    FROM questao ORDER BY RANDOM() LIMIT 10
+  `).all().map((q) => ({
+    id_questao: q.id_questao,
+    enunciado: q.enunciado,
+    alternativa_a: q.alternativa_a,
+    alternativa_b: q.alternativa_b,
+    alternativa_c: q.alternativa_c,
+    alternativa_d: q.alternativa_d,
+    alternativa_e: q.alternativa_e,
+    resposta_correta: q.resposta_correta,
+    disciplina: q.disciplina,
+    tema: q.tema,
+    dificuldade: q.dificuldade,
+    imagem_url: q.imagem_url
+  }));
+}
+
+function playerPayload(player) {
+  return {
+    id_usuario: player.user.id_usuario,
+    nome: player.user.nome,
+    nivel: player.user.nivel,
+    foto_cor: player.user.foto_cor || "azul",
+    respostas: player.respostas,
+    acertos: player.acertos,
+    tempo_total: Number(player.tempo_total.toFixed(2))
+  };
+}
+
+function getScreenState(match) {
+  return {
+    code: match.code,
+    mode: match.mode,
+    duration: match.duration,
+    status: match.finished ? "Finalizado" : "Em andamento",
+    remaining: match.mode === "blitz"
+      ? Math.max(0, match.duration - Math.floor((Date.now() - match.startedAt) / 1000))
+      : null,
+    players: match.players.map(playerPayload),
+    result: match.result || null
+  };
+}
+
+function emitMatchState(match) {
+  io.to(match.code).emit("duelo_estado", getScreenState(match));
+  io.to(`screen:${match.code}`).emit("duelo_estado", getScreenState(match));
+}
+
+function finishDuel(match, reason = "concluido", disconnectUserId = null) {
+  if (match.finished) return;
+  match.finished = true;
+  if (match.timer) clearInterval(match.timer);
+
+  let winnerId = null;
+  let empate = false;
+  const [playerA, playerB] = match.players;
+
+  if (disconnectUserId) {
+    const disconnected = match.players.find((player) => player.user.id_usuario === disconnectUserId);
+    const remaining = match.players.find((player) => player.user.id_usuario !== disconnectUserId);
+    if (remaining) winnerId = remaining.user.id_usuario;
+  } else if (reason === "blitz" || reason === "concluido") {
+    if (playerA.acertos !== playerB.acertos) {
+      winnerId = playerA.acertos > playerB.acertos ? playerA.user.id_usuario : playerB.user.id_usuario;
+    } else if (match.mode === "conhecimento") {
+      if (playerA.tempo_total !== playerB.tempo_total) {
+        winnerId = playerA.tempo_total < playerB.tempo_total ? playerA.user.id_usuario : playerB.user.id_usuario;
+      } else {
+        empate = true;
+      }
+    } else {
+      empate = true;
+    }
+  }
+
+  const finalize = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO duelo
+      (id_host, id_desafiante, pontuacao_host, pontuacao_desafiante,
+       tempo_host, tempo_desafiante, id_vencedor, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'Finalizado')
+    `).run(
+      playerA.user.id_usuario,
+      playerB.user.id_usuario,
+      playerA.acertos,
+      playerB.acertos,
+      playerA.tempo_total,
+      playerB.tempo_total,
+      winnerId
+    );
+
+    for (const player of match.players) {
+      let xpGanho;
+      if (empate) {
+        xpGanho = 25;
+      } else if (player.user.id_usuario === winnerId) {
+        xpGanho = 50;
+      } else {
+        xpGanho = 10;
+      }
+      db.prepare("UPDATE usuario SET xp = xp + ? WHERE id_usuario = ?")
+        .run(xpGanho, player.user.id_usuario);
+      const user = db.prepare("SELECT xp, nivel FROM usuario WHERE id_usuario = ?")
+        .get(player.user.id_usuario);
+      const novoNivel = Math.floor(user.xp / 1000) + 1;
+      if (novoNivel !== user.nivel) {
+        db.prepare("UPDATE usuario SET nivel = ? WHERE id_usuario = ?")
+          .run(novoNivel, player.user.id_usuario);
+      }
+      const desempenho = db.prepare("SELECT total_acertos, total_erros FROM desempenho WHERE id_usuario = ?")
+        .get(player.user.id_usuario);
+      const total = desempenho.total_acertos + desempenho.total_erros;
+      const taxa = total === 0 ? 0 : desempenho.total_acertos / total * 100;
+      db.prepare("UPDATE desempenho SET taxa_acerto = ? WHERE id_usuario = ?")
+        .run(Number(taxa.toFixed(2)), player.user.id_usuario);
+      player.xpGanho = xpGanho;
+    }
+  });
+  finalize();
+
+  const winner = winnerId
+    ? match.players.find((player) => player.user.id_usuario === winnerId)
+    : null;
+  match.result = {
+    winnerId,
+    empate,
+    reason,
+    players: match.players.map((player) => ({
+      ...playerPayload(player),
+      xp_ganho: player.xpGanho
+    }))
+  };
+  io.to(match.code).emit("duelo_resultado", {
+    code: match.code,
+    mode: match.mode,
+    winnerId,
+    winnerName: winner ? winner.user.nome : null,
+    empate,
+    reason,
+    players: match.result.players
+  });
+  io.to(`screen:${match.code}`).emit("duelo_resultado", {
+    code: match.code,
+    mode: match.mode,
+    winnerId,
+    winnerName: winner ? winner.user.nome : null,
+    empate,
+    reason,
+    players: match.result.players
+  });
+  emitMatchState(match);
+
+  setTimeout(() => {
+    activeDuels.delete(match.code);
+  }, 30000);
+}
+
+function startDuel(match) {
+  match.startedAt = Date.now();
+  match.finished = false;
+  match.questions = getQuestionsForDuel();
+  match.players.forEach((player) => {
+    player.respostas = 0;
+    player.acertos = 0;
+    player.tempo_total = 0;
+    player.respondidas = new Set();
+  });
+  activeDuels.set(match.code, match);
+
+  for (const player of match.players) {
+    io.sockets.sockets.get(player.socketId)?.join(match.code);
+  }
+
+  io.to(match.code).emit("duelo_inicio", {
+    code: match.code,
+    mode: match.mode,
+    duration: match.duration,
+    players: match.players.map(playerPayload),
+    questions: match.questions.map(({ resposta_correta, ...question }) => question),
+    startedAt: match.startedAt
+  });
+  emitMatchState(match);
+
+  if (match.mode === "blitz") {
+    match.timer = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - match.startedAt) / 1000);
+      const remaining = Math.max(0, match.duration - elapsed);
+      io.to(match.code).emit("duelo_tempo", { remaining });
+      io.to(`screen:${match.code}`).emit("duelo_tempo", { remaining });
+      if (remaining <= 0) finishDuel(match, "blitz");
+    }, 1000);
+  }
+}
+
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) {
+      socket.duelUser = null;
+      return next();
+    }
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(payload.id);
+    if (!user) return next(new Error("Usuário inválido"));
+    socket.duelUser = user;
+    next();
+  } catch {
+    next(new Error("Token inválido"));
+  }
+});
+
+io.on("connection", (socket) => {
+  socket.on("telao_entrar", (code) => {
+    const normalized = String(code || "").trim().toUpperCase();
+    const match = activeDuels.get(normalized);
+    if (!match) return socket.emit("telao_erro", "Sala não encontrada.");
+    socket.join(`screen:${normalized}`);
+    socket.emit("duelo_estado", getScreenState(match));
+  });
+
+  socket.on("duelo_buscar", ({ mode, duration } = {}) => {
+    if (!socket.duelUser) return socket.emit("duelo_erro", "Autenticação obrigatória.");
+    const normalizedMode = mode === "blitz" ? "blitz" : "conhecimento";
+    const normalizedDuration = normalizedMode === "blitz"
+      ? Math.min(5, Math.max(1, Number(duration) || 1)) * 60
+      : null;
+    const queueKey = `${normalizedMode}:${normalizedDuration || "knowledge"}`;
+    if (!duelQueues.has(queueKey)) duelQueues.set(queueKey, []);
+    const queue = duelQueues.get(queueKey);
+
+    const existingIndex = queue.findIndex((entry) => entry.socketId === socket.id);
+    if (existingIndex >= 0) queue.splice(existingIndex, 1);
+    if (queue.some((entry) => entry.userId === socket.duelUser.id_usuario)) {
+      socket.emit("duelo_aguardando", { mode: normalizedMode });
+      return;
+    }
+
+    queue.push({
+      socketId: socket.id,
+      userId: socket.duelUser.id_usuario,
+      user: socket.duelUser
+    });
+    socket.emit("duelo_aguardando", { mode: normalizedMode, duration: normalizedDuration });
+
+    if (queue.length >= 2) {
+      const [first, second] = queue.splice(0, 2);
+      duelQueues.delete(queueKey);
+      const code = createRoomCode();
+      const match = {
+        code,
+        mode: normalizedMode,
+        duration: normalizedDuration,
+        players: [
+          { socketId: first.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(first.userId), respostas: 0, acertos: 0, tempo_total: 0, respondidas: new Set() },
+          { socketId: second.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(second.userId), respostas: 0, acertos: 0, tempo_total: 0, respondidas: new Set() }
+        ],
+        finished: false,
+        timer: null,
+        result: null
+      };
+      startDuel(match);
+    }
+  });
+
+  socket.on("duelo_cancelar", () => {
+    for (const queue of duelQueues.values()) {
+      const index = queue.findIndex((entry) => entry.socketId === socket.id);
+      if (index >= 0) queue.splice(index, 1);
+    }
+  });
+
+  socket.on("duelo_responder", ({ code, questionIndex, alternativa }) => {
+    const normalizedCode = String(code || "").toUpperCase();
+    const match = activeDuels.get(normalizedCode);
+    if (!match || match.finished) return;
+    const player = match.players.find((entry) => entry.socketId === socket.id);
+    if (!player) return;
+    const index = Number(questionIndex);
+    if (!Number.isInteger(index) || index < 0 || index >= match.questions.length) return;
+    if (player.respondidas.has(index)) return;
+    const question = match.questions[index];
+    const normalizedAnswer = String(alternativa || "").trim().toUpperCase();
+    if (!["A", "B", "C", "D", "E"].includes(normalizedAnswer)) return;
+    const elapsed = (Date.now() - match.startedAt) / 1000;
+    const correta = normalizedAnswer === question.resposta_correta;
+    player.respondidas.add(index);
+    player.respostas += 1;
+    player.tempo_total += elapsed;
+    if (correta) player.acertos += 1;
+
+    socket.emit("duelo_resposta", {
+      questionIndex: index,
+      correta,
+      resposta_correta: question.resposta_correta
+    });
+    emitMatchState(match);
+
+    if (match.mode === "conhecimento" &&
+        match.players.every((entry) => entry.respostas >= 10)) {
+      finishDuel(match, "concluido");
+    }
+  });
+
+  socket.on("disconnect", () => {
+    for (const queue of duelQueues.values()) {
+      const index = queue.findIndex((entry) => entry.socketId === socket.id);
+      if (index >= 0) queue.splice(index, 1);
+    }
+    for (const match of activeDuels.values()) {
+      if (match.finished) continue;
+      const player = match.players.find((entry) => entry.socketId === socket.id);
+      if (player) {
+        finishDuel(match, "desistencia", player.user.id_usuario);
+      }
+    }
+  });
+});
+
 app.use(express.static(ROOT, {
   extensions: ["html"],
   index: "index.html"
 }));
 
-app.listen(PORT, "0.0.0.0", () => {
+httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Vestible rodando em http://localhost:${PORT}`);
   console.log(`Banco SQLite: ${dbFile}`);
 });

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Telão</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+body{background:#0F1A30;color:#F4EFE2;min-height:100vh}
+.screen-shell{max-width:1100px;margin:auto;padding:40px 24px;text-align:center}
+.screen-shell h1{color:#F4EFE2;font-size:3rem}
+.code-box{display:flex;justify-content:center;gap:10px;margin:28px auto 36px}
+.code-box input{width:min(420px,70vw);padding:18px 20px;font-size:1.5rem;text-align:center;text-transform:uppercase;border-radius:12px;border:2px solid #CB9B3C}
+.screen-scoreboard{display:grid;grid-template-columns:1fr auto 1fr;gap:28px;align-items:center}
+.screen-player{background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.14);border-radius:22px;padding:34px 20px}
+.screen-player strong{display:block;font-family:"Source Serif Pro",Georgia,serif;font-size:2.2rem}
+.screen-player .screen-score{font-size:7rem;font-family:"Source Serif Pro",Georgia,serif;color:#E9C877;line-height:1}
+.screen-player .screen-meta{font-size:1.15rem;color:rgba(244,239,226,.75)}
+.screen-vs{font-size:2.4rem;color:#CB9B3C}
+.screen-status{font-size:1.35rem;margin:24px 0;color:#E9C877}
+.screen-result{font-size:2.2rem;color:#F4EFE2;margin-top:20px}
+</style>
+</head>
+<body>
+<main class="screen-shell">
+  <h1>Vestible — Telão</h1>
+  <div class="code-box">
+    <input id="roomCode" maxlength="6" placeholder="CÓDIGO DA SALA" aria-label="Código da sala">
+    <button class="btn btn-gold" id="connectScreen">Mostrar</button>
+  </div>
+  <div id="screenContent"></div>
+</main>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const codeInput = document.getElementById("roomCode");
+
+function formatTime(seconds){
+  const value = Math.max(0, Number(seconds) || 0);
+  return `${String(Math.floor(value/60)).padStart(2,"0")}:${String(value%60).padStart(2,"0")}`;
+}
+
+function render(data){
+  const [a,b] = data.players || [];
+  const result = data.result;
+  document.getElementById("screenContent").innerHTML = `
+    <div class="screen-status">${data.status === "Finalizado" ? "Duelo finalizado" : (data.mode === "blitz" ? `Blitz — ${formatTime(data.remaining)}` : "Modo Conhecimento")}</div>
+    <div class="screen-scoreboard">
+      <div class="screen-player"><strong>${escapeHtml(a?.nome || "Jogador 1")}</strong><div class="screen-score">${a?.acertos || 0}</div><div class="screen-meta">${a?.respostas || 0} respostas · ${(a?.tempo_total || 0).toFixed(1)} s</div></div>
+      <div class="screen-vs">VS</div>
+      <div class="screen-player"><strong>${escapeHtml(b?.nome || "Jogador 2")}</strong><div class="screen-score">${b?.acertos || 0}</div><div class="screen-meta">${b?.respostas || 0} respostas · ${(b?.tempo_total || 0).toFixed(1)} s</div></div>
+    </div>
+    ${result ? `<div class="screen-result">${result.empate ? "Empate!" : (result.winnerId ? `Vencedor: ${escapeHtml((data.players.find(p=>p.id_usuario===result.winnerId)?.nome || "Jogador"))}` : "Resultado final")}</div>` : ""}
+  `;
+}
+
+document.getElementById("connectScreen").addEventListener("click", () => {
+  const code = codeInput.value.trim().toUpperCase();
+  if(!code) return;
+  socket.emit("telao_entrar", code);
+});
+codeInput.addEventListener("keydown", event => {
+  if(event.key === "Enter") document.getElementById("connectScreen").click();
+});
+socket.on("duelo_estado", render);
+socket.on("duelo_tempo", ({remaining}) => {
+  const status = document.querySelector(".screen-status");
+  if(status) status.textContent = `Blitz — ${formatTime(remaining)}`;
+});
+socket.on("duelo_resultado", result => {
+  document.getElementById("screenContent").insertAdjacentHTML("beforeend", `<div class="screen-result">${result.empate ? "Empate!" : `Vencedor: ${escapeHtml(result.winnerName || "Jogador")}`}</div>`);
+});
+socket.on("telao_erro", message => {
+  document.getElementById("screenContent").innerHTML = `<div class="screen-status">${escapeHtml(message)}</div>`;
+});
+function escapeHtml(value){
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
+}
+</script>
+</body>
+</html>

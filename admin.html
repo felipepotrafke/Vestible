@@ -15,9 +15,10 @@
     <nav class="nav">
       <a href="dashboard.html">Início</a>
       <a href="admin.html" class="active">Administração</a>
+      <a href="perfil.html">Configurações</a>
     </nav>
     <div class="sidebar-user">
-      <a href="#" class="logout-link" id="adminLogout">Sair</a>
+      <a href="#" class="logout-link" id="adminLogout">${ICON.logout}</a>
     </div>
   </aside>
   <main class="main">
@@ -28,7 +29,7 @@
     <div class="two-col" style="grid-template-columns:1fr 1fr">
       <section class="card">
         <h3>Cadastrar questão</h3>
-        <form id="questionForm" class="login-form" style="max-width:none;margin-top:14px">
+        <form id="questionForm" class="login-form" style="max-width:none;margin-top:14px" enctype="multipart/form-data">
           <div class="field"><label>Enunciado</label><div class="input-wrap"><input name="enunciado" required></div></div>
           <div class="field"><label>A</label><div class="input-wrap"><input name="alternativa_a" required></div></div>
           <div class="field"><label>B</label><div class="input-wrap"><input name="alternativa_b" required></div></div>
@@ -39,6 +40,7 @@
           <div class="field"><label>Disciplina</label><div class="input-wrap"><input name="disciplina" required></div></div>
           <div class="field"><label>Tema</label><div class="input-wrap"><input name="tema" required></div></div>
           <div class="field"><label>Dificuldade</label><div class="input-wrap"><select name="dificuldade" style="width:100%;padding:13px;border:1px solid var(--line);border-radius:8px"><option>Facil</option><option>Medio</option><option>Dificil</option></select></div></div>
+          <div class="field"><label>Imagem da questão (até 5 MB)</label><div class="input-wrap"><input name="imagem" type="file" accept="image/*" style="padding:10px"></div></div>
           <div class="field"><label>Material</label><div class="input-wrap"><select name="id_material" id="questionMaterial" style="width:100%;padding:13px;border:1px solid var(--line);border-radius:8px"></select></div></div>
           <button class="btn btn-primary btn-block" type="submit">Cadastrar questão</button>
         </form>
@@ -105,7 +107,7 @@
 
   document.getElementById("questionForm").addEventListener("submit", async event => {
     event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const data = new FormData(event.currentTarget);
     try{
       await api("/api/admin/questoes", {method:"POST", body:JSON.stringify(data)});
       showToast("Questão cadastrada.");

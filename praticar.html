@@ -19,13 +19,14 @@
       <a href="duelo.html">${ICON.swords} Batalha <span class="live-tag">LIVE</span></a>
       <a href="conteudo.html">${ICON.video} Conteúdo</a>
       <a href="ranking.html">${ICON.trophy} Ranking</a>
+      <a href="perfil.html">⚙ Configurações</a>
     </nav>
     <div class="sidebar-user">
       <div class="row">
-        <div class="avatar" data-bind="initials">GM</div>
+        <div class="avatar" data-bind="initials">--</div>
         <div>
-          <div class="name" data-bind="name">Gabriel Mendes</div>
-          <div class="meta">Nível <span data-bind="level">12</span> · <span data-bind="streak">7</span>d 🔥</div>
+          <div class="name" data-bind="name">Carregando...</div>
+          <div class="meta">Nível <span data-bind="level">--</span> · <span data-bind="streak">--</span>d 🔥</div>
         </div>
       </div>
       <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
@@ -75,6 +76,7 @@
   async function load(){
     const [disciplines, me] = await Promise.all([api("/api/disciplinas"), api("/api/me")]);
     const u = me.user;
+    applyProfileVisuals(u);
     document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent=u.nome);
     document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent=u.nome.split(" ").map(w=>w[0]).slice(0,2).join(""));
     document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent=u.nivel);
@@ -123,7 +125,7 @@
     const q = pool[idx % pool.length];
     document.getElementById("questionCard").innerHTML = `
       <div class="qhead"><span><span class="tag">${escapeHtml(q.disciplina)}</span>${escapeHtml(q.tema)}</span><span>${escapeHtml(q.dificuldade)}</span></div>
-      <div class="qbody"><p class="statement">${escapeHtml(q.enunciado)}</p><div id="optionsWrap"></div></div>
+      <div class="qbody"><p class="statement">${escapeHtml(q.enunciado)}</p>${q.imagem_url ? `<img src="${escapeHtml(q.imagem_url)}" alt="Imagem da questão" style="max-width:100%;max-height:360px;border-radius:10px;margin:0 0 20px">` : ""}<div id="optionsWrap"></div></div>
       <div class="feedback-banner" id="feedbackBanner"></div>
       <div class="qfoot"><div class="links"><button id="skipBtn">Pular ▷</button><a href="conteudo.html?disciplina=${encodeURIComponent(q.disciplina)}" id="explainLink">💡 Ver explicação</a></div><button class="btn btn-gold" id="answerBtn">Responder</button></div>`;
     const options = [["A",q.alternativa_a],["B",q.alternativa_b],["C",q.alternativa_c],["D",q.alternativa_d],...(q.alternativa_e ? [["E",q.alternativa_e]] : [])];

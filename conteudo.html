@@ -19,13 +19,14 @@
       <a href="duelo.html">${ICON.swords} Batalha <span class="live-tag">LIVE</span></a>
       <a href="conteudo.html" class="active">${ICON.video} Conteúdo</a>
       <a href="ranking.html">${ICON.trophy} Ranking</a>
+      <a href="perfil.html">⚙ Configurações</a>
     </nav>
     <div class="sidebar-user">
       <div class="row">
-        <div class="avatar" data-bind="initials">GM</div>
+        <div class="avatar" data-bind="initials">--</div>
         <div>
-          <div class="name" data-bind="name">Gabriel Mendes</div>
-          <div class="meta">Nível <span data-bind="level">12</span> · <span data-bind="streak">7</span>d 🔥</div>
+          <div class="name" data-bind="name">Carregando...</div>
+          <div class="meta">Nível <span data-bind="level">--</span> · <span data-bind="streak">--</span>d 🔥</div>
         </div>
       </div>
       <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
@@ -93,6 +94,7 @@
   async function loadContent(){
     const [me, materials] = await Promise.all([api("/api/me"), api("/api/materiais")]);
     const u = me.user;
+    applyProfileVisuals(u);
     document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent=u.nome);
     document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent=u.nome.split(" ").map(w=>w[0]).slice(0,2).join(""));
     document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent=u.nivel);
@@ -101,8 +103,11 @@
 
     const params = new URLSearchParams(location.search);
     const selectedDiscipline = params.get("disciplina");
-    const visible = selectedDiscipline ? materials.filter(m => m.disciplina === selectedDiscipline) : materials;
-    const first = visible[0] || materials[0];
+    const selectedMaterialId = Number(params.get("material"));
+    const selected = selectedMaterialId
+      ? materials.find(m => m.id_material === selectedMaterialId)
+      : (selectedDiscipline ? materials.find(m => m.disciplina === selectedDiscipline) : materials[0]);
+    const first = selected || materials[0];
     const topicList = document.getElementById("topicList");
     const groups = {};
     materials.forEach(m => (groups[m.disciplina] ||= []).push(m));

@@ -51,7 +51,7 @@ const ICON = {
   star:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.7 5.9 6.3.7-4.7 4.4 1.2 6.3L12 17.3 6.5 20.3l1.2-6.3-4.7-4.4 6.3-.7L12 3Z"/></svg>`,
   target:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".6" fill="currentColor"/></svg>`,
   bolt:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 4 14h6l-1 7 9-11h-6l1-7Z"/></svg>`,
-  logout:`<svg viewBox="0 0 50 50" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
+  logout:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/></svg>`,
   mail:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>`,
   lock:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>`,
   eye:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`,
@@ -99,7 +99,9 @@ function requireLogin(){
 
 async function api(path, options = {}){
   const token = localStorage.getItem("vestible_token");
-  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  const headers = options.body instanceof FormData
+    ? { ...(options.headers || {}) }
+    : { "Content-Type": "application/json", ...(options.headers || {}) };
   if(token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(path, { ...options, headers, credentials: "same-origin" });
   const data = await response.json().catch(() => ({}));
@@ -115,6 +117,15 @@ function escapeHtml(value){
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
     "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
   })[ch]);
+}
+
+function applyProfileVisuals(user){
+  if(!user) return;
+  document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent = user.nome);
+  document.querySelectorAll("[data-bind='initials']").forEach(el => {
+    el.textContent = user.nome.split(" ").filter(Boolean).map(w => w[0]).slice(0,2).join("").toUpperCase();
+  });
+  document.querySelectorAll(".avatar").forEach(el => el.dataset.color = user.foto_cor || "azul");
 }
 
 async function logout(){
