@@ -8,7 +8,7 @@ const multer = require("multer");
 const http = require("http");
 const { Server } = require("socket.io");
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "vestible-desenvolvimento-segredo";
 const DB_PATH = process.env.DB_PATH || "./data/vestible.db";
 const ROOT = __dirname;
