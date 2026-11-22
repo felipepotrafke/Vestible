@@ -62,7 +62,7 @@ jobs:
           az webapp config appsettings set \
             --resource-group "$resource_group" \
             --name vestible \
-            --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT="3000"
+            --settings WEBSITE_NODE_DEFAULT_VERSION="20.19.5" WEBSITES_PORT="3000"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
