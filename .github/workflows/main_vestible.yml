@@ -70,3 +70,16 @@ jobs:
           app-name: vestible
           slot-name: Production
           package: .
+
+      - name: Capture Azure application logs
+        shell: bash
+        run: |
+          resource_group=$(az webapp list --query "[?name=='vestible'].resourceGroup | [0]" -o tsv)
+          az webapp log config \
+            --resource-group "$resource_group" \
+            --name vestible \
+            --application-logging filesystem \
+            --level information
+          timeout 20 az webapp log tail \
+            --resource-group "$resource_group" \
+            --name vestible || true
