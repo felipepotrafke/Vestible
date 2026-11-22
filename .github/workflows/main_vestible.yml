@@ -55,6 +55,15 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E59F7EC91CC84FA68AEBD5530C56B069 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_436404B8B7B342F7BBB611905C9B8B91 }}
 
+      - name: Configure Azure Node.js runtime
+        shell: bash
+        run: |
+          resource_group=$(az webapp list --query "[?name=='vestible'].resourceGroup | [0]" -o tsv)
+          az webapp config appsettings set \
+            --resource-group "$resource_group" \
+            --name vestible \
+            --settings WEBSITE_NODE_DEFAULT_VERSION="~20" WEBSITES_PORT="3000"
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
