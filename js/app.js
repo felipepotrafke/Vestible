@@ -44,6 +44,9 @@ function addXP(state, amount){
 
 const ICON = {
   home:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4h4v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9"/></svg>`,
+  book:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z"/><path d="M4 5.5v16"/><path d="M8 7h8M8 11h6"/></svg>`,
+  swords: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 4 6 6M4 5l5-1 1 5"/><path d="m19 4-6 6M20 5l-5-1-1 5"/><path d="m8 16 8-8M16 16l-8-8"/><path d="m5 19 3-3M19 19l-3-3"/></svg>`,
+  shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 19 6v5c0 4.5-2.8 7.8-7 10-4.2-2.2-7-5.5-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>`,
   video: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>`,
   trophy:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5a1 1 0 0 0-1 1c0 2.5 1.8 4 4 4"/><path d="M16 5h3a1 1 0 0 1 1 1c0 2.5-1.8 4-4 4"/><path d="M9 20h6"/><path d="M12 13v4"/></svg>`,
   bell:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16v-5a6 6 0 1 0-12 0v5l-2 3h16l-2-3Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>`,
@@ -133,6 +136,15 @@ function applyProfileVisuals(user){
     }
   });
   document.querySelectorAll(".avatar").forEach(el => el.dataset.color = user.foto_cor || "azul");
+  document.querySelectorAll(".nav").forEach(nav => {
+    if(user.tipo === "admin" && !nav.querySelector("[data-admin-link]")){
+      const link = document.createElement("a");
+      link.href = "admin.html";
+      link.dataset.adminLink = "true";
+      link.innerHTML = `${ICON.shield} Administração`;
+      nav.appendChild(link);
+    }
+  });
 }
 
 async function logout(){

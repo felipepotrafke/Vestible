@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Questões</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="opacity:0">
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="dashboard.html" aria-label="Ir para o início"><img src="assets/logo.svg" alt="Vestible"></a>
+    <nav class="nav">
+      <a href="admin.html">${ICON.shield} Painel</a>
+      <a href="admin-questoes.html" class="active">${ICON.book} Questões</a>
+      <a href="admin-conteudos.html">${ICON.video} Conteúdos</a>
+      <a href="dashboard.html">${ICON.home} Ver plataforma</a>
+    </nav>
+    <div class="sidebar-user"><a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a></div>
+  </aside>
+  <main class="main">
+    <div class="page-head"><div><h1>Banco de questões</h1><p class="subtitle">Crie e mantenha as questões usadas nos estudos e duelos.</p></div><a class="btn btn-outline" href="admin.html">← Painel</a></div>
+    <section class="card on-paper admin-form-card">
+      <h2>Adicionar questão</h2>
+      <form id="questionForm" class="admin-form" enctype="multipart/form-data">
+        <div class="field field-wide"><label>Enunciado</label><div class="input-wrap"><input name="enunciado" required></div></div>
+        <div class="admin-form-grid">
+          <div class="field"><label>A</label><div class="input-wrap"><input name="alternativa_a" required></div></div>
+          <div class="field"><label>B</label><div class="input-wrap"><input name="alternativa_b" required></div></div>
+          <div class="field"><label>C</label><div class="input-wrap"><input name="alternativa_c" required></div></div>
+          <div class="field"><label>D</label><div class="input-wrap"><input name="alternativa_d" required></div></div>
+          <div class="field"><label>E (opcional)</label><div class="input-wrap"><input name="alternativa_e"></div></div>
+          <div class="field"><label>Resposta correta</label><div class="input-wrap"><select name="resposta_correta"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option></select></div></div>
+          <div class="field"><label>Disciplina</label><div class="input-wrap"><input name="disciplina" required></div></div>
+          <div class="field"><label>Tema</label><div class="input-wrap"><input name="tema" required></div></div>
+          <div class="field"><label>Dificuldade</label><div class="input-wrap"><select name="dificuldade"><option>Facil</option><option>Medio</option><option>Dificil</option></select></div></div>
+          <div class="field"><label>Imagem (até 5 MB)</label><div class="input-wrap"><input name="imagem" type="file" accept="image/*" style="padding:10px"></div></div>
+          <div class="field"><label>Material relacionado</label><div class="input-wrap"><select name="id_material" id="questionMaterial"></select></div></div>
+        </div>
+        <button class="btn btn-primary" type="submit">Cadastrar questão</button>
+      </form>
+    </section>
+    <section class="card on-paper admin-list-card"><div class="card-head"><h2>Questões cadastradas</h2><span class="small-caps" id="questionCount"></span></div><div id="questionsList"></div></section>
+  </main>
+</div>
+<script src="js/app.js"></script>
+<script>
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
+  document.body.style.opacity = 1;
+  let questions = [];
+  let materials = [];
+  async function loadAdmin(){
+    const [me, questionData, materialData] = await Promise.all([api("/api/me"), api("/api/admin/questoes"), api("/api/admin/materiais")]);
+    if(me.user.tipo !== "admin"){ window.location.href = "dashboard.html"; return; }
+    questions = questionData; materials = materialData;
+    document.getElementById("questionMaterial").innerHTML = `<option value="">Sem material</option>` + materials.map(m => `<option value="${m.id_material}">${escapeHtml(m.titulo)}</option>`).join("");
+    document.getElementById("questionCount").textContent = `${questions.length} cadastrada(s)`;
+    document.getElementById("questionsList").innerHTML = questions.map(q =>
+      `<div class="list-row"><div><div class="title">${escapeHtml(q.enunciado)}</div><div class="meta">${escapeHtml(q.disciplina)} · ${escapeHtml(q.tema)} · Resposta ${q.resposta_correta}</div></div><div><button class="btn btn-outline" data-edit-question="${q.id_questao}">Editar</button><button class="btn btn-outline" data-delete-question="${q.id_questao}">Excluir</button></div></div>`
+    ).join("") || `<div class="meta">Nenhuma questão cadastrada.</div>`;
+  }
+  document.getElementById("questionForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try { await api("/api/admin/questoes", {method:"POST", body:new FormData(event.currentTarget)}); showToast("Questão cadastrada."); event.currentTarget.reset(); await loadAdmin(); }
+    catch(error){ showToast(error.message); }
+  });
+  document.addEventListener("click", async event => {
+    const editId = event.target.dataset.editQuestion;
+    const deleteId = event.target.dataset.deleteQuestion;
+    try {
+      if(editId){
+        const q = questions.find(item => item.id_questao === Number(editId)); if(!q) return;
+        const enunciado = prompt("Enunciado", q.enunciado); if(enunciado === null) return;
+        const resposta_correta = (prompt("Resposta correta (A, B, C, D ou E)", q.resposta_correta) || q.resposta_correta).toUpperCase();
+        await api(`/api/admin/questoes/${editId}`, {method:"PUT", body:JSON.stringify({...q, enunciado, resposta_correta})});
+        showToast("Questão atualizada."); await loadAdmin();
+      }
+      if(deleteId && confirm("Excluir esta questão?")){ await api(`/api/admin/questoes/${deleteId}`, {method:"DELETE"}); showToast("Questão excluída."); await loadAdmin(); }
+    }catch(error){ showToast(error.message); }
+  });
+  loadAdmin().catch(error => { showToast(error.message); if(error.message.includes("Sessão")) window.location.href="index.html"; });
+</script>
+</body>
+</html>

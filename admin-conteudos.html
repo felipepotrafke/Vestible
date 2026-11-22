@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Conteúdos</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="opacity:0">
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="dashboard.html" aria-label="Ir para o início"><img src="assets/logo.svg" alt="Vestible"></a>
+    <nav class="nav">
+      <a href="admin.html">${ICON.shield} Painel</a>
+      <a href="admin-questoes.html">${ICON.book} Questões</a>
+      <a href="admin-conteudos.html" class="active">${ICON.video} Conteúdos</a>
+      <a href="dashboard.html">${ICON.home} Ver plataforma</a>
+    </nav>
+    <div class="sidebar-user"><a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a></div>
+  </aside>
+  <main class="main">
+    <div class="page-head"><div><h1>Conteúdos de apoio</h1><p class="subtitle">Organize videoaulas e textos para apoiar a revisão.</p></div><a class="btn btn-outline" href="admin.html">← Painel</a></div>
+    <section class="card on-paper admin-form-card">
+      <h2>Adicionar conteúdo</h2>
+      <form id="materialForm" class="admin-form">
+        <div class="admin-form-grid">
+          <div class="field"><label>Título</label><div class="input-wrap"><input name="titulo" required></div></div>
+          <div class="field"><label>Link do vídeo</label><div class="input-wrap"><input name="link_video" type="url"></div></div>
+          <div class="field"><label>Disciplina</label><div class="input-wrap"><input name="disciplina" required></div></div>
+          <div class="field"><label>Tema</label><div class="input-wrap"><input name="tema" required></div></div>
+          <div class="field field-wide"><label>Texto explicativo</label><div class="input-wrap"><textarea name="texto_explicativo"></textarea></div></div>
+        </div>
+        <button class="btn btn-primary" type="submit">Cadastrar conteúdo</button>
+      </form>
+    </section>
+    <section class="card on-paper admin-list-card"><div class="card-head"><h2>Conteúdos cadastrados</h2><span class="small-caps" id="materialCount"></span></div><div id="materialsList"></div></section>
+  </main>
+</div>
+<script src="js/app.js"></script>
+<script>
+  document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
+  document.body.style.opacity = 1;
+  let materials = [];
+  async function loadAdmin(){
+    const [me, data] = await Promise.all([api("/api/me"), api("/api/admin/materiais")]);
+    if(me.user.tipo !== "admin"){ window.location.href = "dashboard.html"; return; }
+    materials = data;
+    document.getElementById("materialCount").textContent = `${materials.length} cadastrado(s)`;
+    document.getElementById("materialsList").innerHTML = materials.map(m =>
+      `<div class="list-row"><div><div class="title">${escapeHtml(m.titulo)}</div><div class="meta">${escapeHtml(m.disciplina)} · ${escapeHtml(m.tema)}</div></div><div><button class="btn btn-outline" data-edit-material="${m.id_material}">Editar</button><button class="btn btn-outline" data-delete-material="${m.id_material}">Excluir</button></div></div>`
+    ).join("") || `<div class="meta">Nenhum conteúdo cadastrado.</div>`;
+  }
+  document.getElementById("materialForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try { await api("/api/admin/materiais", {method:"POST", body:Object.fromEntries(new FormData(event.currentTarget).entries())}); showToast("Conteúdo cadastrado."); event.currentTarget.reset(); await loadAdmin(); }
+    catch(error){ showToast(error.message); }
+  });
+  document.addEventListener("click", async event => {
+    const editId = event.target.dataset.editMaterial;
+    const deleteId = event.target.dataset.deleteMaterial;
+    try {
+      if(editId){
+        const m = materials.find(item => item.id_material === Number(editId)); if(!m) return;
+        const titulo = prompt("Título", m.titulo); if(titulo === null) return;
+        const texto_explicativo = prompt("Texto explicativo", m.texto_explicativo || ""); if(texto_explicativo === null) return;
+        await api(`/api/admin/materiais/${editId}`, {method:"PUT", body:JSON.stringify({...m, titulo, texto_explicativo})});
+        showToast("Conteúdo atualizado."); await loadAdmin();
+      }
+      if(deleteId && confirm("Excluir este conteúdo?")){ await api(`/api/admin/materiais/${deleteId}`, {method:"DELETE"}); showToast("Conteúdo excluído."); await loadAdmin(); }
+    }catch(error){ showToast(error.message); }
+  });
+  loadAdmin().catch(error => { showToast(error.message); if(error.message.includes("Sessão")) window.location.href="index.html"; });
+</script>
+</body>
+</html>

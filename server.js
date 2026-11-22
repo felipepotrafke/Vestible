@@ -745,6 +745,14 @@ app.get("/admin.html", authRequired, adminRequired, (req, res) => {
   res.sendFile(path.join(ROOT, "admin.html"));
 });
 
+app.get("/admin-questoes.html", authRequired, adminRequired, (req, res) => {
+  res.sendFile(path.join(ROOT, "admin-questoes.html"));
+});
+
+app.get("/admin-conteudos.html", authRequired, adminRequired, (req, res) => {
+  res.sendFile(path.join(ROOT, "admin-conteudos.html"));
+});
+
 app.get("/perfil.html", authRequired, (req, res) => {
   res.sendFile(path.join(ROOT, "perfil.html"));
 });
