@@ -22,7 +22,7 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: "20.x"
+          node-version: "24.x"
 
       - name: npm install, build, and test
         run: |
@@ -63,7 +63,7 @@ jobs:
           az webapp config appsettings set \
             --resource-group "$resource_group" \
             --name vestible \
-            --settings WEBSITE_NODE_DEFAULT_VERSION="20.19.5" WEBSITES_PORT="3000" SCM_DO_BUILD_DURING_DEPLOYMENT="true" ENABLE_ORYX_BUILD="true"
+            --settings WEBSITE_NODE_DEFAULT_VERSION="~24" WEBSITES_PORT="3000" SCM_DO_BUILD_DURING_DEPLOYMENT="true" ENABLE_ORYX_BUILD="true"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
