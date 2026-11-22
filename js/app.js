@@ -92,14 +92,35 @@ function showToast(message){
 }
 
 function requireLogin(){
-  const s = getState();
-  if(!s.loggedIn){ window.location.href = "index.html"; }
+  if(!localStorage.getItem("vestible_token")){
+    window.location.href = "index.html";
+  }
 }
 
-function logout(){
-  const s = getState();
-  s.loggedIn = false;
-  saveState(s);
+async function api(path, options = {}){
+  const token = localStorage.getItem("vestible_token");
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if(token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(path, { ...options, headers, credentials: "same-origin" });
+  const data = await response.json().catch(() => ({}));
+  if(response.status === 401){
+    localStorage.removeItem("vestible_token");
+    localStorage.removeItem("vestible_user");
+  }
+  if(!response.ok) throw new Error(data.error || "Não foi possível concluir a operação.");
+  return data;
+}
+
+function escapeHtml(value){
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  })[ch]);
+}
+
+async function logout(){
+  try{ await api("/api/auth/logout", { method:"POST" }); }catch(e){}
+  localStorage.removeItem("vestible_token");
+  localStorage.removeItem("vestible_user");
   window.location.href = "index.html";
 }
 

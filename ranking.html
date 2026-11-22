@@ -58,24 +58,21 @@
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
   document.body.style.opacity = 1;
   document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
-  const s = renderUserWidget();
-
-  const list = [...RANKING].sort((a,b) => b.xp - a.xp);
-  const medals = ["👑","🥈","🥉"];
-  const card = document.getElementById('rankingCard');
-  list.forEach((r,i) => {
-    const initials = r.name.split(' ').map(w=>w[0]).slice(0,2).join('');
-    const isYou = r.name === s.name;
-    card.insertAdjacentHTML('beforeend', `
-      <div class="rank-row" style="${isYou ? 'background:var(--cream-soft);border-radius:10px;padding-left:10px;padding-right:10px;' : ''}">
-        <div class="medal">${medals[i] || (i+1)}</div>
-        <div style="flex:1;">
-          <div class="name">${r.name}${isYou ? ' <span style="color:var(--gold-dark);">(você)</span>' : ''}</div>
-          <div class="meta">Nível ${r.level} · ${r.xp} XP</div>
-        </div>
-        <div class="xp">🔥 ${r.streak}d</div>
-      </div>`);
-  });
+  async function loadRanking(){
+    const [me, ranking] = await Promise.all([api("/api/me"), api("/api/ranking")]);
+    const u = me.user;
+    document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent=u.nome);
+    document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent=u.nome.split(" ").map(w=>w[0]).slice(0,2).join(""));
+    document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent=u.nivel);
+    document.querySelectorAll("[data-bind='streak']").forEach(el => el.textContent=u.streak);
+    document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent=u.xp);
+    const medals = ["👑","🥈","🥉"];
+    document.getElementById("rankingCard").innerHTML = ranking.map((r,i) => {
+      const isYou = r.id_usuario === u.id_usuario;
+      return `<div class="rank-row" style="${isYou?"background:var(--cream-soft);border-radius:10px;padding-left:10px;padding-right:10px;":""}"><div class="medal">${medals[i]||(i+1)}</div><div style="flex:1;"><div class="name">${escapeHtml(r.nome)}${isYou?' <span style="color:var(--gold-dark);">(você)</span>':''}</div><div class="meta">Nível ${r.nivel} · ${r.xp} XP</div></div><div class="xp">🔥 ${r.streak}d</div></div>`;
+    }).join("");
+  }
+  loadRanking().catch(error => showToast(error.message));
 </script>
 </body>
 </html>

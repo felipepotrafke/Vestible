@@ -101,42 +101,44 @@
 <script src="js/data.js"></script>
 <script>
   requireLogin();
-  // resolve the ${ICON...} placeholders written directly in the markup above
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
   document.body.style.opacity = 1;
   document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
-  const s = renderUserWidget();
+  async function loadDashboard(){
+    try{
+      const data = await api("/api/dashboard");
+      const u = data.user;
+      document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent = u.nome);
+      document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent = u.nome.split(" ").map(w=>w[0]).slice(0,2).join("").toUpper());
+      document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent = u.nivel);
+      document.querySelectorAll("[data-bind='streak']").forEach(el => el.textContent = u.streak);
+      document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent = u.xp);
+      document.querySelectorAll("[data-bind='xp-fraction']").forEach(el => el.textContent = `${u.xp % 1000}/1000`);
+      document.querySelectorAll("[data-bind='xp-fill']").forEach(el => el.style.width = `${(u.xp % 1000)/10}%`);
+      document.querySelectorAll("[data-bind='questions-done']").forEach(el => el.textContent = u.questoes_feitas_hoje);
+      document.querySelectorAll("[data-bind='ranking']").forEach(el => el.textContent = `#${data.rankingPosition}`);
+      document.querySelectorAll("[data-bind='questions-goal']").forEach(el => el.textContent = "15");
 
-  // dots
-  const dotsRow = document.getElementById('dotsRow');
-  const total = s.questionsGoal, done = total - s.questionsDone;
-  for(let i=0;i<total;i++){
-    const d = document.createElement('span');
-    d.className = 'dot' + (i < done ? ' done' : '');
-    dotsRow.appendChild(d);
+      const dotsRow = document.getElementById("dotsRow");
+      dotsRow.innerHTML = "";
+      for(let i=0;i<15;i++){
+        dotsRow.insertAdjacentHTML("beforeend", `<span class="dot ${i < u.questoes_feitas_hoje ? "done" : ""}"></span>`);
+      }
+      const errors = data.recentErrors;
+      document.getElementById("errorsList").innerHTML = errors.length
+        ? errors.map(e => `<div class="list-row"><div><div class="title">${escapeHtml(e.tema)}</div><div class="meta">${escapeHtml(e.disciplina)}</div></div><a class="link" href="conteudo.html?disciplina=${encodeURIComponent(e.disciplina)}&from=erro">Ver explicação →</a></div>`).join("")
+        : `<div class="list-row"><div class="meta">Nenhum erro recente.</div></div>`;
+
+      const ranking = await api("/api/ranking");
+      document.getElementById("rankList").innerHTML = ranking.slice(0,3).map((r,i) =>
+        `<div class="rank-row"><div class="medal">${i===0?"👑":i+1}</div><div><div class="name">${escapeHtml(r.nome)}</div><div class="meta">Nível ${r.nivel} · ${r.xp} XP</div></div><div class="xp">🔥${r.streak}d</div></div>`
+      ).join("");
+    }catch(error){
+      if(error.message.includes("Sessão")) window.location.href = "index.html";
+      showToast(error.message);
+    }
   }
-
-  // recent errors
-  const errWrap = document.getElementById('errorsList');
-  s.recentErrors.forEach(er => {
-    errWrap.insertAdjacentHTML('beforeend', `
-      <div class="list-row">
-        <div><div class="title">${er.topic}</div><div class="meta">${er.subject} · ${er.when}</div></div>
-        <a class="link" href="conteudo.html?topic=${er.topicSlug}&from=erro">Ver explicação →</a>
-      </div>`);
-  });
-
-  // ranking preview (top 3)
-  const rankWrap = document.getElementById('rankList');
-  RANKING.slice(0,3).forEach((r,i) => {
-    const initials = r.name.split(' ').map(w=>w[0]).slice(0,2).join('');
-    rankWrap.insertAdjacentHTML('beforeend', `
-      <div class="rank-row">
-        <div class="medal">${i===0?'👑':(i+1)}</div>
-        <div><div class="name">${r.name}</div><div class="meta">Nível ${r.level} · ${r.xp} XP</div></div>
-        <div class="xp">🔥${r.streak}d</div>
-      </div>`);
-  });
+  loadDashboard();
 </script>
 </body>
 </html>

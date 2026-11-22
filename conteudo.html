@@ -90,56 +90,40 @@
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
   document.body.style.opacity = 1;
   document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
-  renderUserWidget();
+  async function loadContent(){
+    const [me, materials] = await Promise.all([api("/api/me"), api("/api/materiais")]);
+    const u = me.user;
+    document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent=u.nome);
+    document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent=u.nome.split(" ").map(w=>w[0]).slice(0,2).join(""));
+    document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent=u.nivel);
+    document.querySelectorAll("[data-bind='streak']").forEach(el => el.textContent=u.streak);
+    document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent=u.xp);
 
-  const params = new URLSearchParams(window.location.search);
-  const fromError = params.get('from') === 'erro';
-  let currentSlug = params.get('topic') || QUESTIONS[0].topicSlug;
-
-  // agrupa tópicos por disciplina, mantendo a ordem de aparição
-  const grouped = [];
-  QUESTIONS.forEach(q => {
-    let g = grouped.find(g => g.subject === q.subject);
-    if(!g){ g = { subject: q.subject, topics: [] }; grouped.push(g); }
-    if(!g.topics.find(t => t.topicSlug === q.topicSlug)){
-      g.topics.push({ topic: q.topic, topicSlug: q.topicSlug });
+    const params = new URLSearchParams(location.search);
+    const selectedDiscipline = params.get("disciplina");
+    const visible = selectedDiscipline ? materials.filter(m => m.disciplina === selectedDiscipline) : materials;
+    const first = visible[0] || materials[0];
+    const topicList = document.getElementById("topicList");
+    const groups = {};
+    materials.forEach(m => (groups[m.disciplina] ||= []).push(m));
+    topicList.innerHTML = `<h3 style="font-size:.95rem;margin-bottom:2px;">Tópicos</h3>` + Object.entries(groups).map(([subject,items]) =>
+      `<div class="group-label">${escapeHtml(subject)}</div>` + items.map(m =>
+        `<a href="conteudo.html?disciplina=${encodeURIComponent(m.disciplina)}&material=${m.id_material}" class="topic-item ${first && m.id_material===first.id_material?"active":""}"><div class="t-title">${escapeHtml(m.tema)}</div><div class="t-sub">${escapeHtml(m.titulo)}</div></a>`
+      ).join("")
+    ).join("");
+    if(params.get("from") === "erro"){
+      document.getElementById("remediationBanner").innerHTML = `<div class="remediation-banner">✕ Você errou essa questão! Assista à videoaula ou leia o resumo.</div>`;
     }
-  });
-
-  const topicListEl = document.getElementById('topicList');
-  function renderTopicList(){
-    let html = `<h3 style="font-size:.95rem;margin-bottom:2px;">Tópicos</h3>`;
-    grouped.forEach(g => {
-      html += `<div class="group-label">${g.subject}</div>`;
-      g.topics.forEach(t => {
-        html += `<a href="conteudo.html?topic=${t.topicSlug}" class="topic-item ${t.topicSlug===currentSlug?'active':''}">
-          <div class="t-title">${t.topic.split('—')[0].trim()}</div>
-          <div class="t-sub">${t.topic.includes('—') ? t.topic.split('—')[1].trim() : g.subject}</div>
-        </a>`;
-      });
-    });
-    topicListEl.innerHTML = html;
-  }
-
-  function renderRemediation(q){
-    const wrap = document.getElementById('remediationBanner');
-    if(fromError){
-      wrap.innerHTML = `<div class="remediation-banner">✕ Você errou essa questão! Assista à videoaula ou leia o resumo para entender o tema antes de tentar novamente.</div>`;
-    }else{
-      wrap.innerHTML = "";
+    if(first){
+      document.getElementById("breadcrumb").innerHTML = `${escapeHtml(first.disciplina)} <span style="opacity:.5;">›</span> <b>${escapeHtml(first.tema)}</b>`;
+      document.getElementById("videoTitle").textContent = first.titulo;
+      document.getElementById("videoSub").textContent = `Vestible · ${first.disciplina}`;
+      document.getElementById("resumoText").innerHTML = `<p>${escapeHtml(first.texto_explicativo || "Conteúdo de apoio não informado.")}</p>`;
+      document.getElementById("practiceBtn").href = `praticar.html?subject=${encodeURIComponent(first.disciplina)}`;
+      document.getElementById("playBtn").onclick = () => {
+        if(first.link_video) window.open(first.link_video, "_blank");
+      };
     }
-  }
-
-  function renderContent(){
-    const q = getQuestionByTopicSlug(currentSlug);
-    renderTopicList();
-    renderRemediation(q);
-    document.getElementById('breadcrumb').innerHTML = `${q.subject} <span style="opacity:.5;">›</span> <b>${q.topic}</b>`;
-    document.getElementById('videoTitle').textContent = q.video.title;
-    document.getElementById('videoSub').textContent = `Vestible · ${q.video.duration}`;
-    document.getElementById('resumoText').innerHTML = `<p>${q.resumo}</p>`;
-    const practiceBtn = document.getElementById('practiceBtn');
-    practiceBtn.href = `praticar.html?subject=${encodeURIComponent(q.subject)}`;
   }
 
   document.getElementById('tabVideo').addEventListener('click', () => {
@@ -154,11 +138,7 @@
     document.getElementById('resumoPane').style.display = '';
     document.getElementById('videoPane').style.display = 'none';
   });
-  document.getElementById('playBtn').addEventListener('click', () => {
-    showToast("Reprodução simulada — conecte um provedor de vídeo na versão completa.");
-  });
-
-  renderContent();
+  loadContent().catch(error => showToast(error.message));
 </script>
 </body>
 </html>

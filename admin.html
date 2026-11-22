@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Administração</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body style="opacity:0">
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><img src="assets/logo.svg" alt=""></div>
+    <nav class="nav">
+      <a href="dashboard.html">Início</a>
+      <a href="admin.html" class="active">Administração</a>
+    </nav>
+    <div class="sidebar-user">
+      <a href="#" class="logout-link" id="adminLogout">Sair</a>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="page-head">
+      <div><h1>Administração</h1><p class="subtitle">Gerencie usuários, questões e materiais</p></div>
+    </div>
+
+    <div class="two-col" style="grid-template-columns:1fr 1fr">
+      <section class="card">
+        <h3>Cadastrar questão</h3>
+        <form id="questionForm" class="login-form" style="max-width:none;margin-top:14px">
+          <div class="field"><label>Enunciado</label><div class="input-wrap"><input name="enunciado" required></div></div>
+          <div class="field"><label>A</label><div class="input-wrap"><input name="alternativa_a" required></div></div>
+          <div class="field"><label>B</label><div class="input-wrap"><input name="alternativa_b" required></div></div>
+          <div class="field"><label>C</label><div class="input-wrap"><input name="alternativa_c" required></div></div>
+          <div class="field"><label>D</label><div class="input-wrap"><input name="alternativa_d" required></div></div>
+          <div class="field"><label>E (opcional)</label><div class="input-wrap"><input name="alternativa_e"></div></div>
+          <div class="field"><label>Resposta correta</label><div class="input-wrap"><select name="resposta_correta" style="width:100%;padding:13px;border:1px solid var(--line);border-radius:8px"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option></select></div></div>
+          <div class="field"><label>Disciplina</label><div class="input-wrap"><input name="disciplina" required></div></div>
+          <div class="field"><label>Tema</label><div class="input-wrap"><input name="tema" required></div></div>
+          <div class="field"><label>Dificuldade</label><div class="input-wrap"><select name="dificuldade" style="width:100%;padding:13px;border:1px solid var(--line);border-radius:8px"><option>Facil</option><option>Medio</option><option>Dificil</option></select></div></div>
+          <div class="field"><label>Material</label><div class="input-wrap"><select name="id_material" id="questionMaterial" style="width:100%;padding:13px;border:1px solid var(--line);border-radius:8px"></select></div></div>
+          <button class="btn btn-primary btn-block" type="submit">Cadastrar questão</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h3>Cadastrar material</h3>
+        <form id="materialForm" class="login-form" style="max-width:none;margin-top:14px">
+          <div class="field"><label>Título</label><div class="input-wrap"><input name="titulo" required></div></div>
+          <div class="field"><label>Link do vídeo</label><div class="input-wrap"><input name="link_video" type="url"></div></div>
+          <div class="field"><label>Texto explicativo</label><div class="input-wrap"><textarea name="texto_explicativo" style="width:100%;min-height:100px;padding:13px;border:1px solid var(--line);border-radius:8px"></textarea></div></div>
+          <div class="field"><label>Disciplina</label><div class="input-wrap"><input name="disciplina" required></div></div>
+          <div class="field"><label>Tema</label><div class="input-wrap"><input name="tema" required></div></div>
+          <button class="btn btn-primary btn-block" type="submit">Cadastrar material</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="card on-paper" style="margin-top:24px">
+      <h3>Questões</h3>
+      <div id="questionsList"></div>
+    </div>
+    <div class="card on-paper" style="margin-top:24px">
+      <h3>Materiais</h3>
+      <div id="materialsList"></div>
+    </div>
+    <div class="card on-paper" style="margin-top:24px">
+      <h3>Usuários</h3>
+      <div id="usersList"></div>
+    </div>
+  </main>
+</div>
+<script src="js/app.js"></script>
+<script>
+  document.body.style.opacity = 1;
+  document.getElementById("adminLogout").addEventListener("click", (event) => { event.preventDefault(); logout(); });
+
+  async function loadAdmin(){
+    const [me, questions, materials, users] = await Promise.all([
+      api("/api/me"),
+      api("/api/admin/questoes"),
+      api("/api/admin/materiais"),
+      api("/api/admin/usuarios")
+    ]);
+    if(me.user.tipo !== "admin"){
+      window.location.href = "dashboard.html";
+      return;
+    }
+    window._adminQuestions = questions;
+    window._adminMaterials = materials;
+    document.getElementById("questionMaterial").innerHTML = `<option value="">Sem material</option>` + materials.map(m =>
+      `<option value="${m.id_material}">${escapeHtml(m.titulo)}</option>`
+    ).join("");
+    document.getElementById("questionsList").innerHTML = questions.map(q =>
+      `<div class="list-row"><div><div class="title">${escapeHtml(q.enunciado)}</div><div class="meta">${escapeHtml(q.disciplina)} · ${escapeHtml(q.tema)} · Resposta ${q.resposta_correta}</div></div><div><button class="btn btn-outline" data-edit-question="${q.id_questao}">Editar</button> <button class="btn btn-outline" data-delete-question="${q.id_questao}">Excluir</button></div></div>`
+    ).join("") || `<div class="meta">Nenhuma questão cadastrada.</div>`;
+    document.getElementById("materialsList").innerHTML = materials.map(m =>
+      `<div class="list-row"><div><div class="title">${escapeHtml(m.titulo)}</div><div class="meta">${escapeHtml(m.disciplina)} · ${escapeHtml(m.tema)}</div></div><div><button class="btn btn-outline" data-edit-material="${m.id_material}">Editar</button> <button class="btn btn-outline" data-delete-material="${m.id_material}">Excluir</button></div></div>`
+    ).join("") || `<div class="meta">Nenhum material cadastrado.</div>`;
+    document.getElementById("usersList").innerHTML = users.map(u =>
+      `<div class="list-row"><div><div class="title">${escapeHtml(u.nome)} · ${escapeHtml(u.email)}</div><div class="meta">${escapeHtml(u.tipo)} · XP ${u.xp} · Nível ${u.nivel} · Taxa ${Number(u.taxa_acerto || 0).toFixed(2)}%</div></div></div>`
+    ).join("");
+  }
+
+  document.getElementById("questionForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try{
+      await api("/api/admin/questoes", {method:"POST", body:JSON.stringify(data)});
+      showToast("Questão cadastrada.");
+      event.currentTarget.reset();
+      loadAdmin();
+    }catch(error){ showToast(error.message); }
+  });
+  document.getElementById("materialForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try{
+      await api("/api/admin/materiais", {method:"POST", body:JSON.stringify(data)});
+      showToast("Material cadastrado.");
+      event.currentTarget.reset();
+      loadAdmin();
+    }catch(error){ showToast(error.message); }
+  });
+  document.addEventListener("click", async event => {
+    const questionId = event.target.dataset.deleteQuestion;
+    const materialId = event.target.dataset.deleteMaterial;
+    const editQuestionId = event.target.dataset.editQuestion;
+    const editMaterialId = event.target.dataset.editMaterial;
+    if(editQuestionId){
+      const q = window._adminQuestions.find(item => item.id_questao === Number(editQuestionId));
+      if(!q) return;
+      const enunciado = prompt("Enunciado", q.enunciado);
+      if(enunciado === null) return;
+      const resposta_correta = (prompt("Resposta correta (A, B, C, D ou E)", q.resposta_correta) || q.resposta_correta).toUpperCase();
+      try{
+        await api(`/api/admin/questoes/${editQuestionId}`, {method:"PUT", body:JSON.stringify({...q, enunciado, resposta_correta})});
+        showToast("Questão atualizada.");
+        loadAdmin();
+      }catch(error){ showToast(error.message); }
+    }
+    if(editMaterialId){
+      const m = window._adminMaterials.find(item => item.id_material === Number(editMaterialId));
+      if(!m) return;
+      const titulo = prompt("Título", m.titulo);
+      if(titulo === null) return;
+      const texto_explicativo = prompt("Texto explicativo", m.texto_explicativo || "");
+      if(texto_explicativo === null) return;
+      try{
+        await api(`/api/admin/materiais/${editMaterialId}`, {method:"PUT", body:JSON.stringify({...m, titulo, texto_explicativo})});
+        showToast("Material atualizado.");
+        loadAdmin();
+      }catch(error){ showToast(error.message); }
+    }
+    if(questionId && confirm("Excluir esta questão?")){
+      await api(`/api/admin/questoes/${questionId}`, {method:"DELETE"}); loadAdmin();
+    }
+    if(materialId && confirm("Excluir este material?")){
+      await api(`/api/admin/materiais/${materialId}`, {method:"DELETE"}); loadAdmin();
+    }
+  });
+  loadAdmin().catch(error => {
+    showToast(error.message);
+    if(error.message.includes("Sessão")) window.location.href="index.html";
+  });
+</script>
+</body>
+</html>

@@ -60,7 +60,7 @@
       </button>
 
       <p class="switch-line">Ainda não tem conta? <b id="toRegister">Criar conta grátis</b></p>
-      <p class="demo-hint">Demonstração de TCC — qualquer e-mail e senha preenchidos entram na conta de exemplo.</p>
+      <p class="demo-hint">Use suas credenciais cadastradas ou os usuários de demonstração.</p>
     </form>
   </div>
 </div>
@@ -77,7 +77,9 @@
     input.type = input.type === 'password' ? 'text' : 'password';
   });
 
-  document.getElementById('loginForm').addEventListener('submit', (e) => {
+  let cadastro = false;
+
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('email').value.trim();
     const pass = document.getElementById('password').value.trim();
@@ -87,20 +89,51 @@
       return;
     }
     err.classList.remove('show');
-    const s = getState();
-    s.loggedIn = true;
-    saveState(s);
-    window.location.href = "dashboard.html";
+    try {
+      const data = cadastro
+        ? await api("/api/auth/register", {
+            method:"POST",
+            body:JSON.stringify({
+              nome: document.getElementById("registerName").value.trim(),
+              email,
+              senha: pass,
+              confirmacao: document.getElementById("confirmPassword").value
+            })
+          })
+        : await api("/api/auth/login", { method:"POST", body:JSON.stringify({ email, senha:pass }) });
+      localStorage.setItem("vestible_token", data.token);
+      localStorage.setItem("vestible_user", JSON.stringify(data.user));
+      window.location.href = data.user.tipo === "admin" ? "admin.html" : "dashboard.html";
+    } catch(error) {
+      err.textContent = error.message;
+      err.classList.add("show");
+    }
   });
 
   document.getElementById('toRegister').addEventListener('click', () => {
-    showToast("Cadastro desativado nesta demonstração — use o botão Entrar.");
-  });
-  document.getElementById('googleBtn').addEventListener('click', () => {
-    const s = getState();
-    s.loggedIn = true;
-    saveState(s);
-    window.location.href = "dashboard.html";
+    cadastro = !cadastro;
+    const form = document.getElementById("loginForm");
+    const existing = document.getElementById("registerName");
+    if(cadastro){
+      document.querySelector(".login-form h1").textContent = "Criar sua conta";
+      document.querySelector(".login-form .lead").textContent = "Cadastre-se para começar seus estudos";
+      const nameField = document.createElement("div");
+      nameField.className = "field";
+      nameField.id = "registerNameField";
+      nameField.innerHTML = `<label for="registerName">Nome</label><div class="input-wrap"><input id="registerName" autocomplete="name" placeholder="Seu nome"></div>`;
+      const emailField = document.querySelector(".field");
+      emailField.before(nameField);
+      const confirmField = document.createElement("div");
+      confirmField.className = "field";
+      confirmField.id = "confirmField";
+      confirmField.innerHTML = `<label for="confirmPassword">Confirmar senha</label><div class="input-wrap"><input type="password" id="confirmPassword" autocomplete="new-password" placeholder="Repita a senha"></div>`;
+      document.querySelector(".btn-primary").before(confirmField);
+      document.querySelector(".btn-primary").textContent = "Criar conta";
+      document.querySelector(".switch-line").innerHTML = `Já tem conta? <b id="toLogin">Entrar</b>`;
+      document.getElementById("toLogin").addEventListener("click", () => document.getElementById("toRegister").click());
+    }else{
+      location.reload();
+    }
   });
 </script>
 </body>
