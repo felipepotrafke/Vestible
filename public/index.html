@@ -6,7 +6,7 @@
 <title>Vestible — Entrar</title>
 <link rel="icon" href="assets/logo.svg">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261123d">
+<link rel="stylesheet" href="css/style.css?v=20261123e">
 </head>
 <body>
 
@@ -46,7 +46,7 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261123d"></script>
+<script src="js/app.js?v=20261123e"></script>
 <script>
   // icons for the input fields
   document.querySelectorAll('.input-wrap')[0].insertAdjacentHTML('afterbegin', ICON.mail);
@@ -93,14 +93,14 @@
       nameField.className = "field";
       nameField.id = "registerNameField";
       nameField.innerHTML = `<label for="registerName">Nome</label><div class="input-wrap"><input id="registerName" autocomplete="name" placeholder="Seu nome"></div>`;
-      document.querySelector(".field").before(nameField);
+      document.getElementById("email").closest(".field").before(nameField);
     }
     if(!document.getElementById("confirmEmailField")){
       const confirmEmailField = document.createElement("div");
       confirmEmailField.className = "field";
       confirmEmailField.id = "confirmEmailField";
       confirmEmailField.innerHTML = `<label for="confirmEmail">Confirmar e-mail</label><div class="input-wrap"><input type="email" id="confirmEmail" autocomplete="email" placeholder="Repita o e-mail"></div>`;
-      document.querySelector(".field").before(confirmEmailField);
+      document.getElementById("email").closest(".field").after(confirmEmailField);
     }
     if(!document.getElementById("confirmField")){
       const confirmField = document.createElement("div");

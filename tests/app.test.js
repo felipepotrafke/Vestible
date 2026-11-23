@@ -95,6 +95,8 @@ test("banco possui matérias e assuntos específicos válidos", async () => {
   assert.equal(disciplines.response.status, 200);
   assert.ok(disciplines.body.includes("Matemática"));
   assert.ok(disciplines.body.includes("Física"));
+  assert.ok(disciplines.body.includes("Biologia"));
+  assert.ok(disciplines.body.includes("Inglês"));
 
   const physicsTopics = await request(`${baseUrl}/api/temas?disciplina=${encodeURIComponent("Física")}`, { headers });
   assert.equal(physicsTopics.response.status, 200);

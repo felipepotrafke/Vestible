@@ -402,6 +402,19 @@ const expandedQuestions = [
   ["Geografia","Globalização","Os fluxos econômicos de uma empresa em vários países caracterizam:","economia fechada","empresa multinacional","feudalismo","protecionismo absoluto","economia doméstica","B","Medio","Globalização","Empresas com operações em diversos países são multinacionais."],
   ["Geografia","Meio ambiente","O desmatamento da Amazônia contribui para:","aumento da biodiversidade","perda de habitat e mudanças climáticas","queda da erosão","formação de lagos","redução do CO₂","B","Medio","Questões ambientais","A retirada da floresta fragmenta habitats e altera ciclos naturais."],
   ["Geografia","Geopolítica","Mercosul é uma iniciativa voltada à:","integração regional","descolonização do Ártico","guerra comercial global","unificação de moedas do mundo","banimento agrícola","A","Facil","Blocos econômicos","O Mercosul promove integração comercial e política regional."]
+  ,
+  ["Biologia","Citologia","Qual organela é responsável pela produção de energia celular?","Mitocôndria","Complexo golgiense","Lisossomo","Ribossomo","Núcleo","A","Facil","Respiração celular","As mitocôndrias realizam etapas da respiração celular e produzem ATP, principal fonte de energia utilizável pela célula."],
+  ["Biologia","Genética","O DNA está organizado, principalmente, em estruturas chamadas:","Ribossomos","Cromossomos","Lisossomos","Vacúolos","Cloroplastos","B","Facil","Genética e cromossomos","Os cromossomos são estruturas formadas por DNA associado a proteínas e carregam a informação genética."],
+  ["Biologia","Ecologia","A relação em que uma espécie se beneficia e a outra não é prejudicada é:","Mutualismo","Comensalismo","Parasitismo","Competição","Predação","B","Medio","Relações ecológicas","No comensalismo, uma espécie obtém benefício enquanto a outra não sofre dano nem recebe benefício."],
+  ["Biologia","Botânica","A abertura dos estômatos permite principalmente:","Digestão","Trocas gasosas","Circulação","Excreção","Fecundação","B","Facil","Folha e estômatos","Os estômatos controlam a entrada de CO₂, a saída de O₂ e a perda de vapor-d'água pela transpiração."],
+  ["Biologia","Reprodução","A célula responsável pela fecundação em humanos é:","Glóbulo vermelho","Espermatozoide","Neurônio","Plaqueta","Linfócito","B","Facil","Sistema reprodutor","O espermatozoide se funde ao óvulo durante a fecundação, formando o zigoto."],
+  ["Biologia","Evolução","A seleção natural favorece organismos:","mais numerosos em qualquer ambiente","melhor adaptados ao ambiente","que não sofrem mutações","com menor diversidade genética","sempre maiores","B","Medio","Teoria da evolução","Indivíduos com características vantajosas em determinado ambiente têm maior chance de sobreviver e deixar descendentes."],
+  ["Inglês","Reading","Choose the best meaning of 'although':","because","even though","after","instead","unless","B","Facil","Conectivos em inglês","Although introduces a contrast or concession; it has the meaning of even though."],
+  ["Inglês","Grammar","Complete: 'She ___ to school every morning.'","go","goes","gone","going","went","B","Facil","Present simple","In the third-person singular, verbs in the present simple usually receive -s or -es."],
+  ["Inglês","Vocabulary","Which word is a synonym of 'happy'?","sad","angry","joyful","tired","afraid","C","Facil","Sinônimos em inglês","Happy and joyful express a state of pleasure or positive emotion."],
+  ["Inglês","Grammar","Which sentence is in the present continuous?","I walked home.","I am walking home.","I will walk home.","I walk home.","I have walked home.","B","Facil","Present continuous","The present continuous uses the verb to be plus the -ing form: am walking."],
+  ["Inglês","Reading","What does 'immediately' mean?","slowly","at once","later","rarely","carefully","B","Facil","Advérbios em inglês","Immediately means without delay or at once."],
+  ["Inglês","Writing","Choose the correct question:","You live near here?","Do you live near here?","Lives you near here?","Did you live near here doing?","Are you living near here do?","B","Facil","English questions","The present simple question is formed with do/does before the subject."]
 ];
 const insertExpandedMaterial = db.prepare(`
   INSERT INTO material_apoio (titulo, link_video, texto_explicativo, disciplina, tema)
@@ -472,6 +485,14 @@ const materialCatalog = {
     ["Meio ambiente", "Sustentabilidade", "Questões ambientais envolvem uso dos recursos naturais, poluição, mudanças climáticas e conservação. Relacione causas locais a impactos globais."],
     ["Demografia", "População", "Demografia estuda natalidade, mortalidade, migrações e estrutura populacional. Pirâmides etárias ajudam a interpretar crescimento e envelhecimento."],
     ["Globalização", "Economia mundial", "A globalização integra mercados, culturas e tecnologias por fluxos financeiros, comerciais e informacionais. Também aprofunda desigualdades regionais."]
+  ],
+  "Biologia": [
+    ["Citologia", "Estrutura celular", "A célula é a unidade estrutural e funcional dos seres vivos. Estude membrana, citoplasma, núcleo, organelas e diferenças entre células procarióticas e eucarióticas."],
+    ["Genética", "Hereditariedade", "Genética explica a transmissão das características pela informação contida no DNA. Dominância, recessividade, alelos e cruzamentos são fundamentais para interpretar herança."]
+  ],
+  "Inglês": [
+    ["Leitura e vocabulário", "Interpretação em inglês", "Na leitura em inglês, identifique ideias principais, conectores e palavras cognatas. Não traduza todo o texto; use contexto para compreender termos desconhecidos."],
+    ["Gramática essencial", "Tempos verbais", "Revise present simple, present continuous, past simple e future. Observe auxiliares, terminações verbais e marcadores temporais para escolher a estrutura adequada."]
   ]
 };
 for (const [disciplina, entries] of Object.entries(materialCatalog)) {
