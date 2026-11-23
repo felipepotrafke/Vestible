@@ -78,7 +78,7 @@ function renderQueue() {
 
 function renderMatch(data) {
   match = data;
-  questionIndex = 0;
+  questionIndex = Number.isInteger(data.questionIndex) ? data.questionIndex : 0;
   answered = false;
   const me = data.players.find(player => player.id_usuario === state.id);
   const opponent = data.players.find(player => player.id_usuario !== state.id);
@@ -202,8 +202,10 @@ api("/api/me").then(data => {
   socket.on("connect_error", error => showToast(error.message));
   socket.on("duelo_aguardando", renderQueue);
   socket.on("duelo_inicio", renderMatch);
-  socket.on("duelo_reconectado", ({ code }) => {
+  socket.on("duelo_reconectado", (data) => {
+    const code = data.code;
     showToast(`Reconectado à sala ${code}.`);
+    renderMatch(data);
   });
   socket.on("duelo_estado", updateScores);
   socket.on("duelo_tempo", ({ remaining }) => {

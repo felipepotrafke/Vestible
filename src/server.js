@@ -1319,7 +1319,6 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   if (socket.duelUser) {
     for (const match of activeDuels.values()) {
-      if (match.finished) continue;
       const player = match.players.find((entry) =>
         entry.user.id_usuario === socket.duelUser.id_usuario
       );
@@ -1330,11 +1329,30 @@ io.on("connection", (socket) => {
         }
         player.socketId = socket.id;
         socket.join(match.code);
-        socket.emit("duelo_reconectado", {
-          code: match.code,
-          mode: match.mode,
-          duration: match.duration
-        });
+        if (match.finished && match.result) {
+          const winner = match.result.winnerId
+            ? match.players.find((entry) => entry.user.id_usuario === match.result.winnerId)
+            : null;
+          socket.emit("duelo_resultado", {
+            code: match.code,
+            mode: match.mode,
+            winnerId: match.result.winnerId,
+            winnerName: winner ? winner.user.nome : null,
+            empate: match.result.empate,
+            reason: match.result.reason,
+            players: match.result.players
+          });
+        } else {
+          socket.emit("duelo_reconectado", {
+            code: match.code,
+            mode: match.mode,
+            duration: match.duration,
+            questionIndex: player.respondidas.size,
+            players: match.players.map(playerPayload),
+            questions: match.questions.map(({ resposta_correta, ...question }) => question),
+            startedAt: match.startedAt
+          });
+        }
         emitMatchState(match);
       }
     }
@@ -1441,8 +1459,7 @@ io.on("connection", (socket) => {
     });
     emitMatchState(match);
 
-    if (match.mode === "conhecimento" &&
-        match.players.every((entry) => entry.respostas >= 10)) {
+    if (match.players.every((entry) => entry.respostas >= match.questions.length)) {
       finishDuel(match, "concluido");
     }
   });
