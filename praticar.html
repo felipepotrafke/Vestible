@@ -124,10 +124,34 @@
     mode = "questions";
     const disciplines = uniqueValues("disciplina");
     const urlSubject = new URLSearchParams(location.search).get("subject");
+    const urlTopic = new URLSearchParams(location.search).get("topic");
+
+    function topicsForSelected(selectedDisciplines){
+      return uniqueValues("tema").filter(topic =>
+        allQuestions.some(q => selectedDisciplines.includes(q.disciplina) && q.tema === topic)
+      );
+    }
+
+    function renderTopicOptions(selectedDisciplines, selectedTopics = []){
+      const topicOptions = document.getElementById("topicOptions");
+      if(!selectedDisciplines.length){
+        topicOptions.innerHTML = `<div class="topic-placeholder">Escolha uma matéria para ver os assuntos disponíveis.</div>`;
+        return;
+      }
+      const topics = topicsForSelected(selectedDisciplines);
+      topicOptions.innerHTML = topics.map(topic => `
+        <label class="check-option ${selectedTopics.includes(topic) ? "selected" : ""}">
+          <input type="checkbox" value="${escapeHtml(topic)}" ${selectedTopics.includes(topic) ? "checked" : ""}> ${escapeHtml(topic)}
+        </label>`).join("");
+      topicOptions.querySelectorAll("input").forEach(input => {
+        input.addEventListener("change", () => input.closest(".check-option").classList.toggle("selected", input.checked));
+      });
+    }
+
     stage.innerHTML = `
       <div class="card practice-config">
         <h2>Configure suas questões</h2>
-        <p class="config-description">Selecione uma ou mais matérias e assuntos.</p>
+        <p class="config-description">Primeiro escolha uma matéria. Os assuntos mostrados serão apenas os desta disciplina.</p>
         <div class="config-section">
           <h3>Matérias</h3>
           <div class="check-grid" id="disciplineOptions">${disciplines.map(d => `
@@ -137,22 +161,39 @@
         </div>
         <div class="config-section">
           <h3>Assuntos</h3>
-          <div class="check-grid" id="topicOptions">${uniqueValues("tema").map(t => `
-            <label class="check-option"><input type="checkbox" value="${escapeHtml(t)}"> ${escapeHtml(t)}</label>`).join("")}</div>
+          <div class="check-grid" id="topicOptions"></div>
+        </div>
+        <div class="config-section">
+          <h3>Quantidade de questões</h3>
+          <div class="simulado-count">
+            <input type="number" id="questionCount" min="1" max="50" value="10">
+            <small>Máximo: 50 questões</small>
+          </div>
         </div>
         <div class="config-actions">
           <button class="btn btn-outline" id="backMode">Voltar</button>
           <button class="btn btn-gold" id="startQuestions">Começar</button>
         </div>
       </div>`;
-    document.querySelectorAll(".check-option input").forEach(input => {
-      input.addEventListener("change", () => input.closest(".check-option").classList.toggle("selected", input.checked));
+    const initialDisciplines = urlSubject ? disciplines.filter(d => d === urlSubject) : [];
+    renderTopicOptions(initialDisciplines, urlTopic ? [urlTopic] : []);
+    document.querySelectorAll("#disciplineOptions input").forEach(input => {
+      input.addEventListener("change", () => {
+        input.closest(".check-option").classList.toggle("selected", input.checked);
+        const selectedDisciplines = [...document.querySelectorAll("#disciplineOptions input:checked")].map(i => i.value);
+        renderTopicOptions(selectedDisciplines);
+      });
     });
     document.getElementById("backMode").addEventListener("click", renderModeSelection);
     document.getElementById("startQuestions").addEventListener("click", () => {
       const disciplines = [...document.querySelectorAll("#disciplineOptions input:checked")].map(i => i.value);
       const topics = [...document.querySelectorAll("#topicOptions input:checked")].map(i => i.value);
-      pool = allQuestions.filter(q => (!disciplines.length || disciplines.includes(q.disciplina)) && (!topics.length || topics.includes(q.tema)));
+      if(!disciplines.length){ showToast("Escolha ao menos uma matéria."); return; }
+      const count = Math.max(1, Math.min(50, Number(document.getElementById("questionCount").value) || 10));
+      pool = allQuestions
+        .filter(q => disciplines.includes(q.disciplina) && (!topics.length || topics.includes(q.tema)))
+        .sort(() => Math.random() - 0.5)
+        .slice(0, count);
       if(!pool.length){ showToast("Nenhuma questão encontrada com esses filtros."); return; }
       idx = 0; correctCount = 0; attempted = 0;
       renderQuestion();
@@ -277,7 +318,7 @@
           banner.classList.add("incorrect-fb");
           banner.textContent = "✕ Resposta incorreta. Confira o material de apoio abaixo.";
           const link = document.getElementById("explainLink");
-          link.href = `conteudo.html?disciplina=${encodeURIComponent(q.disciplina)}&from=erro`;
+          link.href = `conteudo.html?disciplina=${encodeURIComponent(q.disciplina)}&tema=${encodeURIComponent(q.tema)}&from=erro`;
           link.style.color = "var(--red)";
           link.style.fontWeight = "700";
         }

@@ -349,6 +349,87 @@ if (db.prepare("SELECT COUNT(*) AS count FROM questao").get().count < 60) {
   addRealQuestions();
 }
 
+// Expande o banco em instalações existentes sem duplicar enunciados.
+const expandedQuestions = [
+  ["Matemática","Geometria plana","Uma praça retangular mede 30 m por 20 m. Qual é seu perímetro?","50 m","60 m","100 m","600 m","1200 m","C","Facil","Geometria básica","Perímetro é a soma dos lados: 30+30+20+20=100 m."],
+  ["Matemática","Geometria plana","A área de um triângulo com base 12 cm e altura 5 cm é:","17 cm²","30 cm²","60 cm²","25 cm²","120 cm²","B","Facil","Área de triângulos","A área do triângulo é (base × altura)/2 = 12×5/2 = 30 cm²."],
+  ["Matemática","Funções","Se f(x)=3x-7, o valor de f(4) é:","5","7","12","19","−19","A","Facil","Função afim","Substituindo x por 4: f(4)=3×4-7=5."],
+  ["Matemática","Funções","Em f(x)=x²-6x+8, a soma das raízes é:","-8","-6","2","6","8","D","Medio","Raízes de funções quadráticas","Para ax²+bx+c, a soma das raízes é -b/a. Aqui, -(-6)/1=6."],
+  ["Matemática","Análise combinatória","Uma equipe de 3 pessoas será escolhida entre 5. Quantas equipes são possíveis?","10","15","20","60","125","A","Medio","Combinações","Como a ordem não importa: C(5,3)=5!/(3!2!)=10."],
+  ["Matemática","Probabilidade","Ao lançar dois dados, qual a probabilidade de a soma ser 7?","1/12","1/6","1/36","1/3","7/36","B","Medio","Probabilidade com dados","Há 6 pares favoráveis entre 36 possíveis, ou seja, 6/36=1/6."],
+  ["Matemática","Progressões","O 10º termo da PA 2, 5, 8, ... é:","29","31","32","35","30","A","Medio","Progressão aritmética","a₁₀=a₁+(10-1)r=2+9×3=29."],
+  ["Matemática","Logaritmos","O valor de log₂(32) é:","4","5","16","30","32","B","Facil","Logaritmos","Como 2⁵=32, log₂(32)=5."],
+  ["Matemática","Trigonometria","Em um triângulo retângulo, seno é definido como:","cateto adjacente/hipotenusa","cateto oposto/hipotenusa","hipotenusa/cateto oposto","cateto oposto/cateto adjacente","hipotenusa/cateto adjacente","B","Facil","Razões trigonométricas","O seno de um ângulo agudo é o cateto oposto dividido pela hipotenusa."],
+  ["Matemática","Estatística","A mediana dos valores 3, 7, 2, 9, 5 é:","3","5","7","9","4","B","Facil","Medidas de tendência central","Ordenando: 2, 3, 5, 7, 9. O valor central é 5."],
+  ["Física","Cinemática","Um carro percorre 240 km em 3 h. Sua velocidade média é:","60 km/h","80 km/h","180 km/h","720 km/h","100 km/h","B","Facil","Velocidade média","Velocidade média é distância dividida pelo tempo: 240/3=80 km/h."],
+  ["Física","Cinemática","Um móvel acelera uniformemente de 10 m/s para 30 m/s em 4 s. A aceleração é:","2 m/s²","4 m/s²","5 m/s²","10 m/s²","20 m/s²","C","Medio","Movimento uniformemente variado","A aceleração é a variação da velocidade pelo tempo: (30-10)/4=5 m/s²."],
+  ["Física","Dinâmica","A força necessária para acelerar uma massa de 5 kg a 3 m/s² é:","8 N","15 N","1,67 N","30 N","25 N","B","Facil","Segunda Lei de Newton","F=m·a=5×3=15 N."],
+  ["Física","Dinâmica","Segundo a terceira lei de Newton, ação e reação possuem:","mesma direção e sentido","direções perpendiculares","mesma intensidade e sentidos opostos","a mesma massa","só uma atua","C","Medio","Leis de Newton","Ações e reações têm mesma intensidade, mesma linha de ação e sentidos opostos."],
+  ["Física","Energia","Uma mola comprimida armazena principalmente:","energia elétrica","energia potencial elástica","energia química","energia nuclear","energia térmica","B","Facil","Energia potencial elástica","Uma mola deformada pode armazenar energia potencial elástica."],
+  ["Física","Termologia","Qual transferência de calor ocorre pelo movimento de fluidos?","Condução","Convecção","Radiação","Dilatação","Indução","B","Facil","Processos de propagação do calor","Convecção é a transferência por movimentos da massa do fluido."],
+  ["Física","Óptica","A imagem formada por uma câmera fotográfica é normalmente:","virtual e direita","real e invertida","real e direita","virtual e invertida","inexistente","B","Medio","Formação de imagens","Lentes convergentes produzem imagem real e invertida no plano do filme ou sensor."],
+  ["Física","Ondas","O produto frequência por comprimento de onda da onda é:","massa","energia","período","velocidade","amplitude","D","Medio","Equação fundamental da onda","A velocidade de propagação é v=f·λ."],
+  ["Física","Eletricidade","Em uma resistência de 10 Ω atravessada por 2 A, a tensão é:","5 V","12 V","20 V","200 V","0,2 V","C","Facil","Lei de Ohm","Pela Lei de Ohm, U=R·i=10×2=20 V."],
+  ["Física","Eletricidade","Potência elétrica pode ser calculada por:","P=U/i","P=U·i","P=R·i²","P=U²·R","P=i/U","B","Facil","Potência elétrica","A potência elétrica instantânea é P=U·i."],
+  ["História","Brasil Colônia","O sistema de capitanias hereditárias foi instituído em:","1500","1534","1822","1889","1930","B","Facil","Brasil colonial","A Coroa portuguesa criou as capitanias hereditárias em 1534."],
+  ["História","Independência","O processo de independência do Brasil ocorreu em:","1808","1822","1888","1889","1930","B","Facil","Independência do Brasil","A independência foi proclamada em 7 de setembro de 1822."],
+  ["História","Abolição","A Lei Áurea foi assinada em:","1888","1889","1871","1870","1891","A","Facil","Abolição da escravidão","A Lei Áurea foi assinada pela Princesa Isabel em 13 de maio de 1888."],
+  ["História","República Velha","A Política do Café-com-Leite caracterizou:","a aliança entre PA e MG","a união entre RJ e BA","o coronelismo indígena","a ditadura militar","o Plano Real","A","Medio","Primeira República","A expressão designa a alternância política entre oligarquias de São Paulo e Minas Gerais."],
+  ["História","Era Vargas","O Estado Novo foi criado no governo de:","Getúlio Vargas","Juscelino Kubitschek","Castelo Branco","Tancredo Neves","Dom Pedro II","A","Medio","Era Vargas","Getúlio Vargas iniciou o Estado Novo em 1937."],
+  ["História","Segunda Guerra Mundial","Pearl Harbor foi atacado em:","1939","1941","1945","1950","1936","B","Medio","Segunda Guerra Mundial","O ataque japonês ocorreu em 7 de dezembro de 1941."],
+  ["História","Guerra Fria","A corrida armamentista da Guerra Fria ocorreu principalmente entre:","Brasil e Portugal","EUA e URSS","Japão e China","França e Alemanha","Egito e Líbia","B","Medio","Guerra Fria","Estados Unidos e União Soviética lideraram os blocos confrontados."],
+  ["História","Ditadura militar","O AI-5 foi editado em:","1964","1968","1979","1985","1990","B","Medio","Ditadura civil-militar","O Ato Institucional nº 5 foi promulgado em 1968."],
+  ["História","Constituição","A Constituição cidadã foi promulgada em:","1967","1979","1988","1990","1994","C","Medio","Constituição de 1988","A atual Constituição entrou em vigor após ser promulgada em 1988."],
+  ["História","Globalização","A queda do Muro de Berlim ocorreu em:","1989","1985","1991","1979","2001","A","Medio","Fim da Guerra Fria","O Muro de Berlim caiu em 9 de novembro de 1989."],
+  ["Português","Interpretação","Na frase \"O aluno estudou bastante, mas não alcançou a meta\", a conjunção introduz:","adição","alternativa","oposição","conclusão","tempo","C","Facil","Conectivos","\"Mas\" é uma conjunção coordenativa adversativa."],
+  ["Português","Interpretação","Inferir uma informação significa:","copiá-la do texto","deduzi-la por pistas","opinar sem leitura","corrigir o autor","traduzir o texto","B","Medio","Leitura inferencial","Inferir é concluir uma ideia não explícita a partir de elementos do texto."],
+  ["Português","Sintaxe","Em \"Entregaram o relatório\", o sujeito é:","oculto","composto","indeterminado","inexistente","relatório","C","Medio","Tipos de sujeito","O verbo na 3ª pessoa do plural não permite identificar o agente da ação."],
+  ["Português","Concordância","Assinale a concordância correta:","A maioria dos alunos viajaram","Fazem cinco dias","Havia muitos candidatos","Haviam muitos candidatos","As crianças chegou","C","Medio","Concordância verbal","O verbo haver impessoal fica no singular: havia muitos candidatos."],
+  ["Português","Figuras de linguagem","\"O vento beijava meu rosto\" é um exemplo de:","hipérbole","metáfora","personificação","metonímia","antítese","C","Facil","Figuras de linguagem","Atribuir ao vento uma ação humana caracteriza personificação."],
+  ["Português","Semântica","A palavra \"ratificar\" significa:","cancelar","confirmar","reduzir","perder","completar","B","Medio","Vocabulário","Ratificar significa confirmar ou validar."],
+  ["Português","Regência","A forma adequada é:","Assistimos o filme","Obedeceram aos idosos","Preferimos a calor","Paguei ao conta","Visitei ao museu","B","Medio","Regência verbal","Obedecer exige a preposição a e o objeto indireto fica no caso: aos idosos."],
+  ["Português","Crase","A crase é obrigatória em:","Vou a pé","Entreguei a ela","Chegarei a noite","Referi-me à empresa","Gosto de a praia","D","Medio","Crase","Ocorre crase pela fusão da preposição a com o artigo feminino a."],
+  ["Português","Literatura","O Realismo brasileiro marcou:","exaltação romântica da natureza","análise crítica da sociedade","negligência da razão","preferência exclusiva pela mitologia","abandono da prosa","B","Medio","Realismo no Brasil","Machado de Assis usa o Realismo para analisar psicologia e instituições sociais."],
+  ["Português","Literatura","A poesia modernista de 1922 buscou:","imitar o parnasianismo","romper modelos europeus","eliminar temas nacionais","usar apenas versos medievais","preservar o Arcadismo","B","Medio","Modernismo brasileiro","A Semana de Arte Moderna valorizou inovação estética e linguagem brasileira."],
+  ["Geografia","Cartografia","A escala 1:100.000 indica que 1 cm no mapa representa:","10 m","100 m","1 km","10 km","100 km","C","Medio","Escala cartográfica","Um centímetro representa 100.000 cm, equivalentes a 1 km."],
+  ["Geografia","Clima","A latitude influencia o clima principalmente por:","alterar o relevo","variar a insolação","controlar o solo","mudar o fuso horário","diminuir o mar","B","Facil","Fatores climáticos","A latitude modifica o ângulo e a duração da radiação solar."],
+  ["Geografia","Urbanização","O processo de crescimento das cidades é chamado:","industrialização","urbanização","transumância","demografia","regionalização","B","Facil","Urbanização","Urbanização é o aumento da participação populacional urbana."],
+  ["Geografia","População","A taxa de natalidade relaciona-se ao número de:","idosos por ano","nascidos por mil habitantes","migrações legais","escolas por região","casamentos por país","B","Facil","Indicadores demográficos","Nascimentos anuais por mil habitantes compõem a taxa de natalidade."],
+  ["Geografia","Biomas","O Cerrado é marcado por:","vegetação perenemente gelada","árvores latifoliadas e muita umidade","vegetação xerófila mediterrânea","savana com duas estações definidas","florestas de coníferas","D","Medio","Biomas brasileiros","O Cerrado apresenta vegetação arbustiva e estacional entre seca e chuva."],
+  ["Geografia","Agronegócio","A monocultura pode intensificar:","diversidade biológica","erosão e desequilíbrio nutricional","perenidade dos solos","policultura familiar","recuperação florestal","B","Medio","Uso agrícola do solo","Cultivo repetido de uma espécie pode empobrecer o solo e ampliar erosão."],
+  ["Geografia","Economia","A atividade de transformar matérias-primas em produtos é:","pecuária","comércio","indústria","extrativismo","serviços","C","Facil","Setores econômicos","Indústria transforma insumos em bens por processos produtivos."],
+  ["Geografia","Globalização","Os fluxos econômicos de uma empresa em vários países caracterizam:","economia fechada","empresa multinacional","feudalismo","protecionismo absoluto","economia doméstica","B","Medio","Globalização","Empresas com operações em diversos países são multinacionais."],
+  ["Geografia","Meio ambiente","O desmatamento da Amazônia contribui para:","aumento da biodiversidade","perda de habitat e mudanças climáticas","queda da erosão","formação de lagos","redução do CO₂","B","Medio","Questões ambientais","A retirada da floresta fragmenta habitats e altera ciclos naturais."],
+  ["Geografia","Geopolítica","Mercosul é uma iniciativa voltada à:","integração regional","descolonização do Ártico","guerra comercial global","unificação de moedas do mundo","banimento agrícola","A","Facil","Blocos econômicos","O Mercosul promove integração comercial e política regional."]
+];
+const insertExpandedMaterial = db.prepare(`
+  INSERT INTO material_apoio (titulo, link_video, texto_explicativo, disciplina, tema)
+  VALUES (?, ?, ?, ?, ?)
+`);
+const insertExpandedQuestion = db.prepare(`
+  INSERT INTO questao
+  (enunciado, alternativa_a, alternativa_b, alternativa_c, alternativa_d, alternativa_e, resposta_correta, disciplina, tema, dificuldade)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const findExpandedQuestion = db.prepare("SELECT id_questao FROM questao WHERE enunciado = ?");
+const linkExpandedMaterial = db.prepare("INSERT OR IGNORE INTO questao_material (id_questao, id_material) VALUES (?, ?)");
+const expandBank = db.transaction(() => {
+  for (const item of expandedQuestions) {
+    const [disciplina, tema, enunciado, a, b, c, d, e, correta, dificuldade, titulo, resumo] = item;
+    if (findExpandedQuestion.get(enunciado)) continue;
+    const material = insertExpandedMaterial.run(
+      titulo,
+      `https://www.youtube.com/results?search_query=${encodeURIComponent(`${disciplina} ${tema} vestibular aula`)}`,
+      resumo,
+      disciplina,
+      tema
+    );
+    const question = insertExpandedQuestion.run(enunciado, a, b, c, d, e, correta, disciplina, tema, dificuldade);
+    linkExpandedMaterial.run(question.lastInsertRowid, material.lastInsertRowid);
+  }
+});
+expandBank();
+
 // Reorganiza os materiais iniciais com nomes específicos e explicações completas.
 const materialCatalog = {
   "Matemática": [
@@ -692,6 +773,14 @@ app.get("/api/dashboard", authRequired, (req, res) => {
 app.get("/api/disciplinas", authRequired, (req, res) => {
   const rows = db.prepare("SELECT DISTINCT disciplina FROM questao ORDER BY disciplina").all();
   res.json(rows.map((row) => row.disciplina));
+});
+
+app.get("/api/temas", authRequired, (req, res) => {
+  const disciplina = req.query.disciplina ? String(req.query.disciplina) : null;
+  const rows = disciplina
+    ? db.prepare("SELECT DISTINCT tema FROM questao WHERE disciplina = ? ORDER BY tema").all(disciplina)
+    : db.prepare("SELECT DISTINCT tema FROM questao ORDER BY tema").all();
+  res.json(rows.map((row) => row.tema));
 });
 
 app.get("/api/questoes", authRequired, (req, res) => {

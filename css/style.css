@@ -296,6 +296,7 @@ body[data-reduced-motion="true"] *{animation-duration:.01ms!important;animation-
 .check-option{display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--cream-soft);font-size:.84rem;font-weight:600;cursor:pointer;}
 .check-option input{accent-color:var(--navy-900);}
 .check-option.selected{border-color:var(--navy-900);background:var(--paper);}
+.topic-placeholder{grid-column:1/-1;padding:14px;border:1px dashed var(--line);border-radius:10px;color:var(--ink-muted);font-size:.84rem;}
 .config-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px;}
 .simulado-count{display:flex;align-items:center;gap:12px;}
 .simulado-count input{width:110px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font:600 1rem var(--sans);color:var(--navy-900);}
