@@ -55,3 +55,19 @@ Estudantes do ensino médio se preparando para vestibulares e o ENEM, que buscam
 Projeto em desenvolvimento ativo.
 
 </div>
+
+## Estrutura do projeto
+
+- `src/`: aplicação Node.js, API e integração com SQLite.
+- `public/`: páginas HTML, estilos, scripts e arquivos públicos.
+- `data/`: banco SQLite local e dados persistidos.
+- `database/`: scripts SQL de referência.
+- `tests/`: testes automatizados de integração.
+
+## Desenvolvimento
+
+```bash
+npm install
+npm start
+npm test
+```

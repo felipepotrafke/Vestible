@@ -53,8 +53,32 @@
     const [me, users] = await Promise.all([api("/api/me"), api("/api/admin/usuarios")]);
     if(me.user.tipo !== "admin"){ window.location.href = "dashboard.html"; return; }
     document.getElementById("usersList").innerHTML = users.map(u =>
-      `<div class="list-row"><div><div class="title">${escapeHtml(u.nome)} · ${escapeHtml(u.email)}</div><div class="meta">${escapeHtml(u.tipo)} · XP ${u.xp} · Nível ${u.nivel} · Taxa ${Number(u.taxa_acerto || 0).toFixed(2)}%</div></div></div>`
+      `<div class="list-row">
+        <div>
+          <div class="title">${escapeHtml(u.nome)} · ${escapeHtml(u.email)}</div>
+          <div class="meta">${escapeHtml(u.tipo)} · XP ${u.xp} · Nível ${u.nivel} · Taxa ${Number(u.taxa_acerto || 0).toFixed(2)}%</div>
+        </div>
+        ${u.id_usuario === me.user.id_usuario
+          ? `<span class="meta">Conta atual</span>`
+          : `<button class="btn btn-outline delete-user" type="button" data-user-id="${u.id_usuario}" data-user-name="${escapeHtml(u.nome)}">Excluir</button>`}
+      </div>`
     ).join("") || `<div class="meta">Nenhum usuário cadastrado.</div>`;
+
+    document.querySelectorAll(".delete-user").forEach(button => {
+      button.addEventListener("click", async () => {
+        const name = button.dataset.userName;
+        if(!window.confirm(`Excluir definitivamente o usuário "${name}"?\n\nEsta ação remove o usuário e seus dados de respostas e duelos.`)) return;
+        button.disabled = true;
+        try {
+          const result = await api(`/api/admin/usuarios/${button.dataset.userId}`, { method: "DELETE" });
+          showToast(result.message);
+          await loadAdmin();
+        } catch (error) {
+          button.disabled = false;
+          showToast(error.message);
+        }
+      });
+    });
   }
   loadAdmin().catch(error => {
     showToast(error.message);

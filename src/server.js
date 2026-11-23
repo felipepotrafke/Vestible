@@ -12,16 +12,17 @@ const { Server } = require("socket.io");
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "vestible-desenvolvimento-segredo";
 const DB_PATH = process.env.DB_PATH || "./data/vestible.db";
-const ROOT = __dirname;
+const ROOT = path.resolve(__dirname, "..");
+const PUBLIC_DIR = path.join(ROOT, "public");
 const dbFile = path.resolve(ROOT, DB_PATH);
 fs.mkdirSync(path.dirname(dbFile), { recursive: true });
 const db = new Database(dbFile);
 db.pragma("foreign_keys = ON");
 db.pragma("journal_mode = WAL");
-fs.mkdirSync(path.join(ROOT, "uploads"), { recursive: true });
+fs.mkdirSync(path.join(PUBLIC_DIR, "uploads"), { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({
-    destination: path.join(ROOT, "uploads"),
+    destination: path.join(PUBLIC_DIR, "uploads"),
     filename: (req, file, cb) => {
       const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname).toLowerCase()}`;
       cb(null, safeName);
@@ -495,7 +496,7 @@ for (const [disciplina, entries] of Object.entries(materialCatalog)) {
 
 const app = express();
 app.use(express.json());
-app.use("/uploads", express.static(path.join(ROOT, "uploads")));
+app.use("/uploads", express.static(path.join(PUBLIC_DIR, "uploads")));
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -909,6 +910,49 @@ app.get("/api/admin/usuarios", authRequired, adminRequired, (req, res) => {
   res.json(users);
 });
 
+app.delete("/api/admin/usuarios/:id", authRequired, adminRequired, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Usuário inválido." });
+  }
+  if (id === req.user.id_usuario) {
+    return res.status(400).json({ error: "Você não pode excluir sua própria conta por aqui." });
+  }
+
+  const target = db.prepare("SELECT id_usuario, nome, email, tipo FROM usuario WHERE id_usuario = ?").get(id);
+  if (!target) return res.status(404).json({ error: "Usuário não encontrado." });
+
+  if (target.tipo === "admin") {
+    const adminCount = db.prepare("SELECT COUNT(*) AS count FROM usuario WHERE tipo = 'admin' AND conta_excluida = 0").get().count;
+    if (adminCount <= 1) {
+      return res.status(400).json({ error: "Não é possível excluir o único administrador ativo." });
+    }
+  }
+
+  const removeUser = db.transaction(() => {
+    db.prepare("DELETE FROM amizade WHERE id_usuario_solicitante = ? OR id_usuario_solicitado = ?").run(id, id);
+    db.prepare("DELETE FROM resposta WHERE id_usuario = ?").run(id);
+    db.prepare("DELETE FROM duelo WHERE id_host = ? OR id_desafiante = ? OR id_vencedor = ?").run(id, id, id);
+    db.prepare("DELETE FROM desempenho WHERE id_usuario = ?").run(id);
+    db.prepare(`
+      INSERT INTO conta_exclusao (email, disponivel_em)
+      VALUES (?, datetime('now', '+24 hours'))
+      ON CONFLICT(email) DO UPDATE SET
+        disponivel_em = excluded.disponivel_em,
+        criada_em = CURRENT_TIMESTAMP
+    `).run(target.email);
+    db.prepare("DELETE FROM usuario WHERE id_usuario = ?").run(id);
+  });
+
+  try {
+    removeUser();
+    res.json({ ok: true, message: `Usuário ${target.nome} excluído.` });
+  } catch (error) {
+    console.error("Erro ao excluir usuário:", error);
+    res.status(500).json({ error: "Não foi possível excluir o usuário." });
+  }
+});
+
 app.get("/api/admin/materiais", authRequired, adminRequired, (req, res) => {
   res.json(db.prepare("SELECT * FROM material_apoio ORDER BY id_material").all());
 });
@@ -1007,19 +1051,19 @@ app.get("/api/admin/questoes", authRequired, adminRequired, (req, res) => {
 });
 
 app.get("/admin.html", authRequired, adminRequired, (req, res) => {
-  res.sendFile(path.join(ROOT, "admin.html"));
+  res.sendFile(path.join(PUBLIC_DIR, "admin.html"));
 });
 
 app.get("/admin-questoes.html", authRequired, adminRequired, (req, res) => {
-  res.sendFile(path.join(ROOT, "admin-questoes.html"));
+  res.sendFile(path.join(PUBLIC_DIR, "admin-questoes.html"));
 });
 
 app.get("/admin-conteudos.html", authRequired, adminRequired, (req, res) => {
-  res.sendFile(path.join(ROOT, "admin-conteudos.html"));
+  res.sendFile(path.join(PUBLIC_DIR, "admin-conteudos.html"));
 });
 
 app.get("/perfil.html", authRequired, (req, res) => {
-  res.sendFile(path.join(ROOT, "perfil.html"));
+  res.sendFile(path.join(PUBLIC_DIR, "perfil.html"));
 });
 
 app.get("/api/duelo/:code", (req, res) => {
@@ -1029,7 +1073,7 @@ app.get("/api/duelo/:code", (req, res) => {
 });
 
 app.get("/telao.html", (req, res) => {
-  res.sendFile(path.join(ROOT, "telao.html"));
+  res.sendFile(path.join(PUBLIC_DIR, "telao.html"));
 });
 
 const httpServer = http.createServer(app);
@@ -1446,7 +1490,7 @@ app.use("/api", (req, res) => {
   res.status(404).json({ error: "Recurso da API não encontrado." });
 });
 
-app.use(express.static(ROOT, {
+app.use(express.static(PUBLIC_DIR, {
   extensions: ["html"],
   index: "index.html"
 }));
