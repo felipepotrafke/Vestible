@@ -42,9 +42,15 @@ test.before(async () => {
   await waitForServer();
 });
 
-test.after(() => {
-  if (server && !server.killed) server.kill("SIGTERM");
-  fs.rmSync(tempDir, { recursive: true, force: true });
+test.after(async () => {
+  if (server && !server.killed) {
+    await new Promise((resolve) => {
+      server.once("exit", resolve);
+      server.kill("SIGTERM");
+      setTimeout(resolve, 500);
+    });
+  }
+  fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 test("servidor entrega páginas públicas e rejeita API sem sessão", async () => {
