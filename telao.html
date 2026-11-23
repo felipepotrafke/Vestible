@@ -69,9 +69,6 @@ socket.on("duelo_tempo", ({remaining}) => {
   const status = document.querySelector(".screen-status");
   if(status) status.textContent = `Blitz — ${formatTime(remaining)}`;
 });
-socket.on("duelo_resultado", result => {
-  document.getElementById("screenContent").insertAdjacentHTML("beforeend", `<div class="screen-result">${result.empate ? "Empate!" : `Vencedor: ${escapeHtml(result.winnerName || "Jogador")}`}</div>`);
-});
 socket.on("telao_erro", message => {
   document.getElementById("screenContent").innerHTML = `<div class="screen-status">${escapeHtml(message)}</div>`;
 });

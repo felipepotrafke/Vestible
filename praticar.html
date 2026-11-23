@@ -28,7 +28,7 @@
           <div class="meta">Nível <span data-bind="level">--</span> · <span data-bind="streak">--</span>d 🔥</div>
         </div>
       </div>
-      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
+      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">0/1000</span></div>
       <div class="xp-track"><div class="xp-fill" data-bind="xp-fill" style="width:0"></div></div>
       <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
     </div>
@@ -43,9 +43,7 @@
       <div class="score-badge" id="scoreBadge">0/0 corretas</div>
     </div>
 
-    <div class="subject-tabs" id="subjectTabs"></div>
-
-    <div class="question-card" id="questionCard"></div>
+    <div id="practiceStage"></div>
 
     <div style="margin-top:18px;color:var(--ink-muted);font-size:.8rem;text-align:center;">
       Anúncio · Prepare-se para o vestibular com a melhor plataforma
@@ -69,64 +67,177 @@
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
   document.body.style.opacity = 1;
   document.querySelectorAll("[data-action='logout']").forEach(el => el.addEventListener('click', e => { e.preventDefault(); logout(); }));
-  let pool = [], idx = 0, correctCount = 0, attempted = 0, answered = false;
-  const tabsWrap = document.getElementById("subjectTabs");
+  const stage = document.getElementById("practiceStage");
+  let allQuestions = [];
+  let pool = [];
+  let idx = 0;
+  let correctCount = 0;
+  let attempted = 0;
+  let answered = false;
+  let mode = null;
+  let timerId = null;
+  let remainingSeconds = 210;
+
+  function updateScoreBadge(){
+    document.getElementById("scoreBadge").textContent = `${correctCount}/${attempted} corretas`;
+  }
 
   async function load(){
-    const [disciplines, me] = await Promise.all([api("/api/disciplinas"), api("/api/me")]);
+    const [me, questions] = await Promise.all([api("/api/me"), api("/api/questoes")]);
     const u = me.user;
     applyProfileVisuals(u);
     document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent=u.nome);
     document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent=u.nome.split(" ").map(w=>w[0]).slice(0,2).join(""));
     document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent=u.nivel);
     document.querySelectorAll("[data-bind='streak']").forEach(el => el.textContent=u.streak);
-    document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent=u.xp);
     document.querySelectorAll("[data-bind='xp-fraction']").forEach(el => el.textContent=`${u.xp%1000}/1000`);
     document.querySelectorAll("[data-bind='xp-fill']").forEach(el => el.style.width=`${(u.xp%1000)/10}%`);
+    allQuestions = questions;
+    renderModeSelection();
+  }
 
-    const urlDiscipline = new URLSearchParams(location.search).get("subject");
-    let current = disciplines.includes(urlDiscipline) ? urlDiscipline : "Todas";
-    ["Todas", ...disciplines].forEach(subject => {
-      const button = document.createElement("button");
-      button.textContent = subject;
-      if(subject === current) button.classList.add("active");
-      button.addEventListener("click", () => {
-        current = subject;
-        [...tabsWrap.children].forEach(c => c.classList.remove("active"));
-        button.classList.add("active");
-        idx = 0;
-        loadQuestions();
-      });
-      tabsWrap.appendChild(button);
+  function renderModeSelection(){
+    clearInterval(timerId);
+    mode = null;
+    stage.innerHTML = `
+      <div class="practice-mode-grid">
+        <button class="practice-mode-card" id="questionsMode">
+          <span class="mode-icon">${ICON.target}</span>
+          <h2>Questões avulsas</h2>
+          <p>Escolha as matérias e assuntos que deseja praticar agora.</p>
+        </button>
+        <button class="practice-mode-card" id="simuladoMode">
+          <span class="mode-icon">${ICON.bolt}</span>
+          <h2>Simulado</h2>
+          <p>Resolva até 30 questões aleatórias com tempo calculado por questão.</p>
+        </button>
+      </div>`;
+    document.getElementById("questionsMode").addEventListener("click", () => renderQuestionsConfig());
+    document.getElementById("simuladoMode").addEventListener("click", () => renderSimuladoConfig());
+  }
+
+  function uniqueValues(key){
+    return [...new Set(allQuestions.map(q => q[key]).filter(Boolean))].sort((a,b) => String(a).localeCompare(String(b),"pt-BR"));
+  }
+
+  function renderQuestionsConfig(){
+    mode = "questions";
+    const disciplines = uniqueValues("disciplina");
+    const urlSubject = new URLSearchParams(location.search).get("subject");
+    stage.innerHTML = `
+      <div class="card practice-config">
+        <h2>Configure suas questões</h2>
+        <p class="config-description">Selecione uma ou mais matérias e assuntos.</p>
+        <div class="config-section">
+          <h3>Matérias</h3>
+          <div class="check-grid" id="disciplineOptions">${disciplines.map(d => `
+            <label class="check-option ${d === urlSubject ? "selected" : ""}">
+              <input type="checkbox" value="${escapeHtml(d)}" ${d === urlSubject ? "checked" : ""}> ${escapeHtml(d)}
+            </label>`).join("")}</div>
+        </div>
+        <div class="config-section">
+          <h3>Assuntos</h3>
+          <div class="check-grid" id="topicOptions">${uniqueValues("tema").map(t => `
+            <label class="check-option"><input type="checkbox" value="${escapeHtml(t)}"> ${escapeHtml(t)}</label>`).join("")}</div>
+        </div>
+        <div class="config-actions">
+          <button class="btn btn-outline" id="backMode">Voltar</button>
+          <button class="btn btn-gold" id="startQuestions">Começar</button>
+        </div>
+      </div>`;
+    document.querySelectorAll(".check-option input").forEach(input => {
+      input.addEventListener("change", () => input.closest(".check-option").classList.toggle("selected", input.checked));
     });
-    await loadQuestions();
+    document.getElementById("backMode").addEventListener("click", renderModeSelection);
+    document.getElementById("startQuestions").addEventListener("click", () => {
+      const disciplines = [...document.querySelectorAll("#disciplineOptions input:checked")].map(i => i.value);
+      const topics = [...document.querySelectorAll("#topicOptions input:checked")].map(i => i.value);
+      pool = allQuestions.filter(q => (!disciplines.length || disciplines.includes(q.disciplina)) && (!topics.length || topics.includes(q.tema)));
+      if(!pool.length){ showToast("Nenhuma questão encontrada com esses filtros."); return; }
+      idx = 0; correctCount = 0; attempted = 0;
+      renderQuestion();
+    });
   }
 
-  async function loadQuestions(){
-    const active = [...tabsWrap.children].find(b => b.classList.contains("active"));
-    const subject = active ? active.textContent : "Todas";
-    const query = subject === "Todas" ? "" : `?disciplina=${encodeURIComponent(subject)}`;
-    pool = await api(`/api/questoes${query}`);
-    idx = 0;
-    renderQuestion();
+  function renderSimuladoConfig(){
+    mode = "simulado";
+    stage.innerHTML = `
+      <div class="card practice-config">
+        <h2>Configure o simulado</h2>
+        <p class="config-description">As questões serão distribuídas entre os temas mais cobrados, com 3 min 30 s por questão.</p>
+        <div class="config-section">
+          <h3>Quantidade de questões</h3>
+          <div class="simulado-count">
+            <input type="number" id="simuladoCount" min="1" max="30" value="10">
+            <small>Máximo: 30 questões</small>
+          </div>
+        </div>
+        <div class="config-actions">
+          <button class="btn btn-outline" id="backMode">Voltar</button>
+          <button class="btn btn-gold" id="startSimulado">Iniciar simulado</button>
+        </div>
+      </div>`;
+    document.getElementById("backMode").addEventListener("click", renderModeSelection);
+    document.getElementById("startSimulado").addEventListener("click", () => {
+      const count = Math.max(1, Math.min(30, Number(document.getElementById("simuladoCount").value) || 1));
+      const frequency = {};
+      allQuestions.forEach(q => frequency[q.tema] = (frequency[q.tema] || 0) + 1);
+      const weighted = allQuestions.map(q => ({q, weight: frequency[q.tema]})).sort((a,b) => b.weight-a.weight);
+      const selected = [];
+      while(selected.length < count){
+        const candidates = weighted.filter(({q}) => !selected.includes(q));
+        if(!candidates.length) break;
+        const topLimit = Math.min(candidates.length, Math.max(3, Math.ceil(candidates.length * .35)));
+        const choice = candidates[Math.floor(Math.random()*topLimit)];
+        selected.push(choice.q);
+      }
+      pool = selected.sort(() => Math.random()-.5);
+      idx = 0; correctCount = 0; attempted = 0;
+      remainingSeconds = count*210;
+      renderQuestion();
+    });
   }
 
-  function updateScoreBadge(){
-    document.getElementById("scoreBadge").textContent = `${correctCount}/${attempted} corretas`;
+  function formatTime(seconds){
+    const minutes = Math.floor(seconds/60);
+    const secs = seconds%60;
+    return `${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
+  }
+
+  function startTimer(){
+    clearInterval(timerId);
+    timerId = setInterval(() => {
+      remainingSeconds--;
+      const timer = document.getElementById("timerBadge");
+      if(timer) timer.textContent = formatTime(Math.max(0, remainingSeconds));
+      if(remainingSeconds <= 0){
+        clearInterval(timerId);
+        showToast("O tempo do simulado terminou.");
+        renderSimuladoResult();
+      }
+    },1000);
   }
 
   function renderQuestion(){
     answered = false;
-    if(!pool.length){
-      document.getElementById("questionCard").innerHTML = `<div class="qbody"><p>Não há questões nesta disciplina.</p></div>`;
+    if(!pool.length){ stage.innerHTML = `<div class="card"><p>Não há questões disponíveis.</p></div>`; return; }
+    if(idx >= pool.length){
+      if(mode === "simulado") renderSimuladoResult();
+      else renderPracticeResult();
       return;
     }
-    const q = pool[idx % pool.length];
-    document.getElementById("questionCard").innerHTML = `
-      <div class="qhead"><span><span class="tag">${escapeHtml(q.disciplina)}</span>${escapeHtml(q.tema)}</span><span>${escapeHtml(q.dificuldade)}</span></div>
-      <div class="qbody"><p class="statement">${escapeHtml(q.enunciado)}</p>${q.imagem_url ? `<img src="${escapeHtml(q.imagem_url)}" alt="Imagem da questão" style="max-width:100%;max-height:360px;border-radius:10px;margin:0 0 20px">` : ""}<div id="optionsWrap"></div></div>
-      <div class="feedback-banner" id="feedbackBanner"></div>
-      <div class="qfoot"><div class="links"><button id="skipBtn">Pular ▷</button><a href="conteudo.html?disciplina=${encodeURIComponent(q.disciplina)}" id="explainLink">💡 Ver explicação</a></div><button class="btn btn-gold" id="answerBtn">Responder</button></div>`;
+    if(mode === "simulado"){
+      startTimer();
+    }
+    const q = pool[idx];
+    stage.innerHTML = `
+      ${mode === "simulado" ? `<div class="practice-question-head"><span class="practice-progress">Questão ${idx+1} de ${pool.length}</span><span class="timer-badge" id="timerBadge">${formatTime(remainingSeconds)}</span></div>` : ""}
+      <div class="question-card">
+        <div class="qhead"><span><span class="tag">${escapeHtml(q.disciplina)}</span>${escapeHtml(q.tema)}</span><span>${escapeHtml(q.dificuldade)}</span></div>
+        <div class="qbody"><p class="statement">${escapeHtml(q.enunciado)}</p>${q.imagem_url ? `<img src="${escapeHtml(q.imagem_url)}" alt="Imagem da questão" style="max-width:100%;max-height:360px;border-radius:10px;margin:0 0 20px">` : ""}<div id="optionsWrap"></div></div>
+        <div class="feedback-banner" id="feedbackBanner"></div>
+        <div class="qfoot"><div class="links"><button id="skipBtn">Pular ▷</button><a href="conteudo.html?disciplina=${encodeURIComponent(q.disciplina)}" id="explainLink">💡 Ver explicação</a></div><button class="btn btn-gold" id="answerBtn">Responder</button></div>
+      </div>`;
     const options = [["A",q.alternativa_a],["B",q.alternativa_b],["C",q.alternativa_c],["D",q.alternativa_d],...(q.alternativa_e ? [["E",q.alternativa_e]] : [])];
     const wrap = document.getElementById("optionsWrap");
     let selected = null;
@@ -150,7 +261,7 @@
       answered = true;
       attempted++;
       try{
-        const result = await api("/api/respostas", {method:"POST", body:JSON.stringify({id_questao:q.id_questao, alternativa:selected, tempo_resposta:0})});
+        const result = await api("/api/respostas", {method:"POST", body:JSON.stringify({id_questao:q.id_questao, alternativa:selected, tempo_resposta:210})});
         if(result.correta) correctCount++;
         updateScoreBadge();
         wrap.querySelectorAll(".option").forEach(o => {
@@ -174,6 +285,19 @@
         document.getElementById("skipBtn").style.visibility = "hidden";
       }catch(error){ answered=false; attempted--; showToast(error.message); }
     });
+  }
+
+  function renderPracticeResult(){
+    clearInterval(timerId);
+    stage.innerHTML = `<div class="card practice-config"><h2>Prática concluída</h2><p class="config-description">${correctCount} de ${attempted} questões corretas.</p><div class="config-actions"><button class="btn btn-gold" id="againBtn">Praticar novamente</button></div></div>`;
+    document.getElementById("againBtn").addEventListener("click", renderQuestionsConfig);
+  }
+
+  function renderSimuladoResult(){
+    clearInterval(timerId);
+    stage.innerHTML = `<div class="card practice-config"><h2>Simulado concluído</h2><p class="config-description">Você acertou ${correctCount} de ${attempted} questões respondidas.</p><div class="config-actions"><button class="btn btn-outline" id="backBtn">Voltar</button><button class="btn btn-gold" id="againBtn">Novo simulado</button></div></div>`;
+    document.getElementById("backBtn").addEventListener("click", renderModeSelection);
+    document.getElementById("againBtn").addEventListener("click", renderSimuladoConfig);
   }
   load().catch(error => showToast(error.message));
 </script>

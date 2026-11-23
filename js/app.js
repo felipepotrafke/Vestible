@@ -1,22 +1,18 @@
-/* Vestible — estado compartilhado (demo estática, guardado em localStorage) */
+/* Vestible — utilitários compartilhados da interface */
 
 const STORAGE_KEY = "vestible_state_v1";
 const XP_PER_LEVEL = 1000;
 
 const DEFAULT_STATE = {
-  name: "Gabriel Mendes",
-  initials: "GM",
-  level: 12,
-  xp: 847,
-  ranking: 234,
-  streak: 7,
-  questionsGoal: 15,
-  questionsDone: 8,
-  recentErrors: [
-    { topic: "Cinemática", subject: "Física", when: "hoje", topicSlug: "cinematica" },
-    { topic: "Segunda Guerra Mundial", subject: "História", when: "ontem", topicSlug: "segunda-guerra" },
-    { topic: "Geometria Espacial", subject: "Matemática", when: "ontem", topicSlug: "geometria-espacial" }
-  ],
+  name: "",
+  initials: "",
+  level: 1,
+  xp: 0,
+  ranking: null,
+  streak: 0,
+  questionsGoal: 0,
+  questionsDone: 0,
+  recentErrors: [],
   loggedIn: false
 };
 
@@ -112,7 +108,13 @@ async function api(path, options = {}){
     localStorage.removeItem("vestible_token");
     localStorage.removeItem("vestible_user");
   }
-  if(!response.ok) throw new Error(data.error || "Não foi possível concluir a operação.");
+  if(!response.ok){
+    const error = new Error(data.error || "Não foi possível concluir a operação.");
+    error.status = response.status;
+    error.requiresVerification = Boolean(data.requiresVerification);
+    error.email = data.email;
+    throw error;
+  }
   return data;
 }
 
@@ -122,8 +124,14 @@ function escapeHtml(value){
   })[ch]);
 }
 
+function applyAccessibilityPreferences(user){
+  document.body.dataset.daltonismo = user.modo_daltonismo || "nenhum";
+  document.body.dataset.reducedMotion = user.reducao_movimento ? "true" : "false";
+}
+
 function applyProfileVisuals(user){
   if(!user) return;
+  applyAccessibilityPreferences(user);
   document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent = user.nome);
   document.querySelectorAll("[data-bind='initials']").forEach(el => {
     const initials = user.nome.split(" ").filter(Boolean).map(w => w[0]).slice(0,2).join("").toUpperCase();

@@ -59,13 +59,20 @@
   });
 
   let cadastro = false;
+  let verificacao = false;
+  let verificationEmail = "";
 
   function showLogin(){
     cadastro = false;
+    verificacao = false;
     document.querySelector(".login-form h1").textContent = "Bem-vindo de volta";
     document.querySelector(".login-form .lead").textContent = "Entre para continuar seus estudos";
     document.getElementById("registerNameField")?.remove();
     document.getElementById("confirmField")?.remove();
+    document.getElementById("verificationField")?.remove();
+    document.querySelectorAll(".field").forEach(field => field.style.display = "");
+    document.getElementById("email").disabled = false;
+    document.getElementById("password").disabled = false;
     document.querySelector(".btn-primary").textContent = "Entrar";
     document.querySelector(".switch-line").innerHTML = `Ainda não tem conta? <b id="toRegister">Criar conta grátis</b>`;
     document.getElementById("toRegister").addEventListener("click", showRegister);
@@ -75,6 +82,11 @@
 
   function showRegister(){
     cadastro = true;
+    verificacao = false;
+    document.getElementById("verificationField")?.remove();
+    document.querySelectorAll(".field").forEach(field => field.style.display = "");
+    document.getElementById("email").disabled = false;
+    document.getElementById("password").disabled = false;
     document.querySelector(".login-form h1").textContent = "Criar sua conta";
     document.querySelector(".login-form .lead").textContent = "Cadastre-se para começar seus estudos";
     if(!document.getElementById("registerNameField")){
@@ -96,6 +108,39 @@
     document.getElementById("toLogin").addEventListener("click", showLogin);
   }
 
+  function showVerification(email){
+    verificacao = true;
+    cadastro = false;
+    verificationEmail = email;
+    document.querySelector(".login-form h1").textContent = "Confirme seu e-mail";
+    document.querySelector(".login-form .lead").textContent = `Enviamos um código de 6 dígitos para ${email}`;
+    document.getElementById("registerNameField")?.remove();
+    document.getElementById("confirmField")?.remove();
+    document.querySelectorAll(".field").forEach(field => field.style.display = "none");
+    if(!document.getElementById("verificationField")){
+      const field = document.createElement("div");
+      field.className = "field";
+      field.id = "verificationField";
+      field.innerHTML = `<label for="verificationCode">Código de verificação</label><div class="input-wrap"><input id="verificationCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></div>`;
+      document.querySelector(".btn-primary").before(field);
+    }
+    document.getElementById("verificationField").style.display = "";
+    document.querySelector(".btn-primary").textContent = "Verificar e entrar";
+    document.querySelector(".switch-line").innerHTML = `Não recebeu? <b id="resendCode">Reenviar código</b><br><b id="backToLogin">Voltar ao login</b>`;
+    document.getElementById("resendCode").addEventListener("click", async () => {
+      const err = document.getElementById("errorMsg");
+      try{
+        await api("/api/auth/resend-verification", {method:"POST", body:JSON.stringify({email:verificationEmail})});
+        err.textContent = "Um novo código foi enviado.";
+        err.classList.add("show");
+      }catch(error){
+        err.textContent = error.message;
+        err.classList.add("show");
+      }
+    });
+    document.getElementById("backToLogin").addEventListener("click", showLogin);
+  }
+
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('email').value.trim();
@@ -107,8 +152,21 @@
     }
     err.classList.remove('show');
     try {
-      const data = cadastro
-        ? await api("/api/auth/register", {
+      let data;
+      if(verificacao){
+        const code = document.getElementById("verificationCode").value.trim();
+        if(!/^\d{6}$/.test(code)){
+          err.textContent = "Informe o código de 6 dígitos.";
+          err.classList.add("show");
+          return;
+        }
+        data = await api("/api/auth/verify-email", {
+          method:"POST",
+          body:JSON.stringify({email:verificationEmail, codigo:code})
+        });
+      }else{
+        data = cadastro
+          ? await api("/api/auth/register", {
             method:"POST",
             body:JSON.stringify({
               nome: document.getElementById("registerName").value.trim(),
@@ -117,11 +175,20 @@
               confirmacao: document.getElementById("confirmPassword").value
             })
           })
-        : await api("/api/auth/login", { method:"POST", body:JSON.stringify({ email, senha:pass }) });
+          : await api("/api/auth/login", { method:"POST", body:JSON.stringify({ email, senha:pass }) });
+        if(data.requiresVerification){
+          showVerification(data.email);
+          return;
+        }
+      }
       localStorage.setItem("vestible_token", data.token);
       localStorage.setItem("vestible_user", JSON.stringify(data.user));
       window.location.href = data.user.tipo === "admin" ? "admin.html" : "dashboard.html";
     } catch(error) {
+      if(error.requiresVerification && error.email){
+        showVerification(error.email);
+        return;
+      }
       err.textContent = error.message;
       err.classList.add("show");
     }

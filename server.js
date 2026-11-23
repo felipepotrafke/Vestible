@@ -3,6 +3,8 @@ const path = require("path");
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 const Database = require("better-sqlite3");
 const multer = require("multer");
 const http = require("http");
@@ -44,6 +46,16 @@ CREATE TABLE IF NOT EXISTS usuario (
   data_criacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   foto_cor TEXT NOT NULL DEFAULT 'azul',
   foto_avatar TEXT,
+  email_verificado INTEGER NOT NULL DEFAULT 0 CHECK (email_verificado IN (0,1)),
+  codigo_verificacao TEXT,
+  codigo_expira_em TEXT,
+  codigo_enviado_em TEXT,
+  data_ultima_atividade TEXT,
+  modo_daltonismo TEXT NOT NULL DEFAULT 'nenhum' CHECK (modo_daltonismo IN ('nenhum','protanopia','deuteranopia','tritanopia')),
+  reducao_movimento INTEGER NOT NULL DEFAULT 0 CHECK (reducao_movimento IN (0,1)),
+  animacao_streak INTEGER NOT NULL DEFAULT 1 CHECK (animacao_streak IN (0,1)),
+  notificacoes INTEGER NOT NULL DEFAULT 1 CHECK (notificacoes IN (0,1)),
+  conta_excluida INTEGER NOT NULL DEFAULT 0 CHECK (conta_excluida IN (0,1)),
   tipo TEXT NOT NULL DEFAULT 'aluno' CHECK (tipo IN ('aluno', 'admin'))
 );
 CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);
@@ -128,6 +140,12 @@ CREATE TABLE IF NOT EXISTS questao_material (
   FOREIGN KEY (id_questao) REFERENCES questao(id_questao) ON DELETE CASCADE,
   FOREIGN KEY (id_material) REFERENCES material_apoio(id_material) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS conta_exclusao (
+  email TEXT PRIMARY KEY,
+  disponivel_em TEXT NOT NULL,
+  criada_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `);
 
 // If an older database has the original schema, add the admin field when needed.
@@ -143,6 +161,40 @@ const usuarioColumnsWithAvatar = db.prepare("PRAGMA table_info(usuario)").all();
 if (!usuarioColumnsWithAvatar.some((column) => column.name === "foto_avatar")) {
   db.exec("ALTER TABLE usuario ADD COLUMN foto_avatar TEXT");
 }
+const usuarioColumnsWithVerification = db.prepare("PRAGMA table_info(usuario)").all();
+if (!usuarioColumnsWithVerification.some((column) => column.name === "email_verificado")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN email_verificado INTEGER NOT NULL DEFAULT 0 CHECK (email_verificado IN (0,1))");
+  db.exec("UPDATE usuario SET email_verificado = 1");
+}
+if (!usuarioColumnsWithVerification.some((column) => column.name === "codigo_verificacao")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN codigo_verificacao TEXT");
+}
+if (!usuarioColumnsWithVerification.some((column) => column.name === "codigo_expira_em")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN codigo_expira_em TEXT");
+}
+if (!usuarioColumnsWithVerification.some((column) => column.name === "codigo_enviado_em")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN codigo_enviado_em TEXT");
+}
+const usuarioColumnsWithActivity = db.prepare("PRAGMA table_info(usuario)").all();
+if (!usuarioColumnsWithActivity.some((column) => column.name === "data_ultima_atividade")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN data_ultima_atividade TEXT");
+}
+const usuarioColumnsWithPreferences = db.prepare("PRAGMA table_info(usuario)").all();
+if (!usuarioColumnsWithPreferences.some((column) => column.name === "modo_daltonismo")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN modo_daltonismo TEXT NOT NULL DEFAULT 'nenhum'");
+}
+if (!usuarioColumnsWithPreferences.some((column) => column.name === "reducao_movimento")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN reducao_movimento INTEGER NOT NULL DEFAULT 0");
+}
+if (!usuarioColumnsWithPreferences.some((column) => column.name === "animacao_streak")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN animacao_streak INTEGER NOT NULL DEFAULT 1");
+}
+if (!usuarioColumnsWithPreferences.some((column) => column.name === "notificacoes")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN notificacoes INTEGER NOT NULL DEFAULT 1");
+}
+if (!usuarioColumnsWithPreferences.some((column) => column.name === "conta_excluida")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN conta_excluida INTEGER NOT NULL DEFAULT 0");
+}
 const questaoColumns = db.prepare("PRAGMA table_info(questao)").all();
 if (!questaoColumns.some((column) => column.name === "imagem_url")) {
   db.exec("ALTER TABLE questao ADD COLUMN imagem_url TEXT");
@@ -157,8 +209,8 @@ if (questionCount === 0) {
       ["Professor 2", "prof2@vestible.com", "Vestible@123", "aluno"]
     ];
     const insertUser = db.prepare(`
-      INSERT INTO usuario (nome, email, senha, tipo)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO usuario (nome, email, senha, tipo, email_verificado)
+      VALUES (?, ?, ?, ?, 1)
     `);
     const insertPerformance = db.prepare("INSERT INTO desempenho (id_usuario) VALUES (?)");
     for (const [nome, email, password, tipo] of seedUsers) {
@@ -371,17 +423,16 @@ function today() {
 
 function resetUserDay(user) {
   if (user.data_ultimo_reset !== today()) {
-    let streak = user.streak;
-    if (user.data_ultimo_reset) {
-      const previous = new Date(`${user.data_ultimo_reset}T00:00:00Z`);
-      const current = new Date(`${today()}T00:00:00Z`);
-      const diff = Math.round((current - previous) / 86400000);
-      if (diff !== 1) streak = 0;
-    } else {
-      streak = 0;
+    db.prepare("UPDATE usuario SET questoes_feitas_hoje = 0, data_ultimo_reset = ? WHERE id_usuario = ?")
+      .run(today(), user.id_usuario);
+  }
+  if (user.data_ultima_atividade) {
+    const previous = new Date(`${user.data_ultima_atividade}T00:00:00Z`);
+    const current = new Date(`${today()}T00:00:00Z`);
+    const diff = Math.round((current - previous) / 86400000);
+    if (diff > 1) {
+      db.prepare("UPDATE usuario SET streak = 0 WHERE id_usuario = ?").run(user.id_usuario);
     }
-    db.prepare("UPDATE usuario SET questoes_feitas_hoje = 0, data_ultimo_reset = ?, streak = ? WHERE id_usuario = ?")
-      .run(today(), streak, user.id_usuario);
   }
 }
 
@@ -396,6 +447,11 @@ function publicUser(user) {
     questoes_feitas_hoje: user.questoes_feitas_hoje,
     foto_cor: user.foto_cor || "azul",
     foto_avatar: user.foto_avatar || null,
+    email_verificado: Boolean(user.email_verificado),
+    modo_daltonismo: user.modo_daltonismo || "nenhum",
+    reducao_movimento: Boolean(user.reducao_movimento),
+    animacao_streak: Boolean(user.animacao_streak),
+    notificacoes: Boolean(user.notificacoes),
     tipo: user.tipo
   };
 }
@@ -418,6 +474,7 @@ function authRequired(req, res, next) {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(payload.id);
     if (!user) return res.status(401).json({ error: "Usuário não encontrado." });
+    if (user.conta_excluida) return res.status(401).json({ error: "Esta conta foi excluída." });
     resetUserDay(user);
     req.user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(payload.id);
     next();
@@ -435,31 +492,141 @@ function setAuthCookie(res, token) {
   res.setHeader("Set-Cookie", `token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`);
 }
 
+function createVerificationCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+async function sendVerificationEmail(user, code) {
+  const smtpConfigured = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
+  if (!smtpConfigured) {
+    console.log(`[Vestible] Código de verificação para ${user.email}: ${code}`);
+    return false;
+  }
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || `"Vestible" <${process.env.SMTP_USER}>`,
+    to: user.email,
+    subject: "Confirme seu e-mail — Vestible",
+    text: `Olá, ${user.nome}!\n\nSeu código de verificação Vestible é: ${code}\n\nO código expira em 15 minutos.`,
+    html: `<div style="font-family:Arial,sans-serif;color:#182238"><h2>Confirme seu e-mail</h2><p>Use o código abaixo para concluir seu cadastro:</p><div style="font-size:32px;letter-spacing:8px;font-weight:bold;background:#f4efe2;padding:18px;border-radius:10px;width:max-content">${code}</div><p>O código expira em 15 minutos.</p></div>`
+  });
+  return true;
+}
+
 app.post("/api/auth/register", (req, res) => {
   const nome = String(req.body.nome || "").trim();
   const email = String(req.body.email || "").trim().toLowerCase();
   const senha = String(req.body.senha || "");
   const confirmacao = String(req.body.confirmacao || "");
   if (!nome || !email) return res.status(400).json({ error: "Nome e e-mail são obrigatórios." });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Informe um e-mail válido." });
   if (senha.length < 8) return res.status(400).json({ error: "A senha deve ter pelo menos 8 caracteres." });
   if (senha !== confirmacao) return res.status(400).json({ error: "A confirmação da senha não coincide." });
+  const reservation = db.prepare("SELECT disponivel_em FROM conta_exclusao WHERE email = ?").get(email);
+  if (reservation) {
+    const remaining = Date.parse(reservation.disponivel_em) - Date.now();
+    if (remaining > 0) {
+      const hours = Math.ceil(remaining / 3600000);
+      return res.status(409).json({ error: `Este e-mail não pode ser reutilizado por mais ${hours} hora(s) após a exclusão da conta.` });
+    }
+    db.prepare("DELETE FROM conta_exclusao WHERE email = ?").run(email);
+  }
   if (db.prepare("SELECT 1 FROM usuario WHERE email = ?").get(email)) {
     return res.status(409).json({ error: "Este e-mail já está cadastrado." });
   }
   try {
     const register = db.transaction(() => {
-      const result = db.prepare("INSERT INTO usuario (nome, email, senha, tipo) VALUES (?, ?, ?, 'aluno')")
-        .run(nome, email, bcrypt.hashSync(senha, 10));
+      const code = createVerificationCode();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      const sentAt = new Date().toISOString();
+      const result = db.prepare(`
+        INSERT INTO usuario
+        (nome, email, senha, tipo, email_verificado, codigo_verificacao, codigo_expira_em, codigo_enviado_em)
+        VALUES (?, ?, ?, 'aluno', 0, ?, ?, ?)
+      `).run(nome, email, bcrypt.hashSync(senha, 10), bcrypt.hashSync(code, 10), expiresAt, sentAt);
       db.prepare("INSERT INTO desempenho (id_usuario) VALUES (?)").run(result.lastInsertRowid);
-      return db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(result.lastInsertRowid);
+      return {
+        user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(result.lastInsertRowid),
+        code
+      };
     });
-    const user = register();
-    const token = signToken(user);
-    setAuthCookie(res, token);
-    res.status(201).json({ token, user: publicUser(user) });
+    const { user, code } = register();
+    sendVerificationEmail(user, code).catch((error) => {
+      console.error("[Vestible] Falha ao enviar e-mail de verificação:", error.message);
+    });
+    res.status(201).json({
+      requiresVerification: true,
+      email,
+      message: "Cadastro criado. Enviamos um código de 6 dígitos para seu e-mail."
+    });
   } catch (error) {
+    console.error("[Vestible] Falha no cadastro:", error);
     res.status(500).json({ error: "Não foi possível concluir o cadastro." });
   }
+});
+
+app.post("/api/auth/verify-email", (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const code = String(req.body.codigo || "").trim();
+  if (!email || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ error: "Informe o e-mail e o código de 6 dígitos." });
+  }
+  const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
+  if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+  if (user.email_verificado) return res.status(409).json({ error: "Este e-mail já foi verificado." });
+  if (!user.codigo_verificacao || !user.codigo_expira_em) {
+    return res.status(400).json({ error: "Solicite um novo código de verificação." });
+  }
+  if (Date.parse(user.codigo_expira_em) <= Date.now()) {
+    return res.status(400).json({ error: "O código expirou. Solicite um novo código." });
+  }
+  if (!bcrypt.compareSync(code, user.codigo_verificacao)) {
+    return res.status(400).json({ error: "Código inválido." });
+  }
+  db.prepare(`
+    UPDATE usuario
+    SET email_verificado = 1, codigo_verificacao = NULL, codigo_expira_em = NULL, codigo_enviado_em = NULL
+    WHERE id_usuario = ?
+  `).run(user.id_usuario);
+  const verifiedUser = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(user.id_usuario);
+  const token = signToken(verifiedUser);
+  setAuthCookie(res, token);
+  res.json({ token, user: publicUser(verifiedUser), message: "E-mail verificado com sucesso!" });
+});
+
+app.post("/api/auth/resend-verification", async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
+  if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+  if (user.email_verificado) return res.status(409).json({ error: "Este e-mail já foi verificado." });
+  if (user.codigo_enviado_em && Date.now() - Date.parse(user.codigo_enviado_em) < 60 * 1000) {
+    return res.status(429).json({ error: "Aguarde 1 minuto antes de solicitar outro código." });
+  }
+  const code = createVerificationCode();
+  db.prepare(`
+    UPDATE usuario
+    SET codigo_verificacao = ?, codigo_expira_em = ?, codigo_enviado_em = ?
+    WHERE id_usuario = ?
+  `).run(
+    bcrypt.hashSync(code, 10),
+    new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    new Date().toISOString(),
+    user.id_usuario
+  );
+  try {
+    await sendVerificationEmail(user, code);
+  } catch (error) {
+    console.error("[Vestible] Falha ao reenviar e-mail de verificação:", error.message);
+  }
+  res.json({ ok: true, message: "Um novo código foi enviado para seu e-mail." });
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -468,6 +635,16 @@ app.post("/api/auth/login", (req, res) => {
   const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
   if (!user || !bcrypt.compareSync(senha, user.senha)) {
     return res.status(401).json({ error: "E-mail ou senha inválidos." });
+  }
+  if (user.conta_excluida) {
+    return res.status(403).json({ error: "Esta conta foi excluída." });
+  }
+  if (!user.email_verificado) {
+    return res.status(403).json({
+      error: "Confirme seu e-mail antes de entrar.",
+      requiresVerification: true,
+      email
+    });
   }
   resetUserDay(user);
   const freshUser = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(user.id_usuario);
@@ -502,6 +679,88 @@ app.put("/api/me", authRequired, (req, res) => {
     .run(nome, foto_cor, foto_avatar, req.user.id_usuario);
   const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(req.user.id_usuario);
   res.json({ user: publicUser(user) });
+});
+
+app.post("/api/me/password", authRequired, (req, res) => {
+  const senhaAtual = String(req.body.senha_atual || "");
+  const novaSenha = String(req.body.nova_senha || "");
+  const confirmacao = String(req.body.confirmacao || "");
+  if (!bcrypt.compareSync(senhaAtual, req.user.senha)) {
+    return res.status(400).json({ error: "A senha atual está incorreta." });
+  }
+  if (novaSenha.length < 8) {
+    return res.status(400).json({ error: "A nova senha deve ter pelo menos 8 caracteres." });
+  }
+  if (novaSenha !== confirmacao) {
+    return res.status(400).json({ error: "A confirmação da nova senha não coincide." });
+  }
+  db.prepare("UPDATE usuario SET senha = ? WHERE id_usuario = ?")
+    .run(bcrypt.hashSync(novaSenha, 10), req.user.id_usuario);
+  res.json({ ok: true, message: "Senha alterada com sucesso." });
+});
+
+app.put("/api/me/preferences", authRequired, (req, res) => {
+  const modoDaltonismo = String(req.body.modo_daltonismo || "nenhum");
+  const reducaoMovimento = req.body.reducao_movimento ? 1 : 0;
+  const animacaoStreak = req.body.animacao_streak ? 1 : 0;
+  const notificacoes = req.body.notificacoes ? 1 : 0;
+  if (!["nenhum", "protanopia", "deuteranopia", "tritanopia"].includes(modoDaltonismo)) {
+    return res.status(400).json({ error: "Modo de acessibilidade inválido." });
+  }
+  db.prepare(`
+    UPDATE usuario
+    SET modo_daltonismo = ?, reducao_movimento = ?, animacao_streak = ?, notificacoes = ?
+    WHERE id_usuario = ?
+  `).run(modoDaltonismo, reducaoMovimento, animacaoStreak, notificacoes, req.user.id_usuario);
+  const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(req.user.id_usuario);
+  res.json({ ok: true, user: publicUser(user), message: "Preferências atualizadas." });
+});
+
+app.post("/api/me/delete", authRequired, (req, res) => {
+  const senha = String(req.body.senha || "");
+  if (!bcrypt.compareSync(senha, req.user.senha)) {
+    return res.status(400).json({ error: "A senha está incorreta." });
+  }
+  const email = req.user.email;
+  const availableAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const deleteAccount = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO conta_exclusao (email, disponivel_em)
+      VALUES (?, ?)
+      ON CONFLICT(email) DO UPDATE SET disponivel_em = excluded.disponivel_em, criada_em = CURRENT_TIMESTAMP
+    `).run(email, availableAt);
+    db.prepare("DELETE FROM resposta WHERE id_usuario = ?").run(req.user.id_usuario);
+    db.prepare("DELETE FROM amizade WHERE id_usuario_solicitante = ? OR id_usuario_solicitado = ?")
+      .run(req.user.id_usuario, req.user.id_usuario);
+    db.prepare("UPDATE desempenho SET total_acertos = 0, total_erros = 0, taxa_acerto = 0 WHERE id_usuario = ?")
+      .run(req.user.id_usuario);
+    db.prepare(`
+      UPDATE usuario SET
+        nome = 'Conta excluída',
+        email = ?,
+        senha = ?,
+        xp = 0,
+        nivel = 1,
+        streak = 0,
+        questoes_feitas_hoje = 0,
+        data_ultimo_reset = NULL,
+        data_ultima_atividade = NULL,
+        foto_cor = 'azul',
+        foto_avatar = NULL,
+        codigo_verificacao = NULL,
+        codigo_expira_em = NULL,
+        codigo_enviado_em = NULL,
+        conta_excluida = 1
+      WHERE id_usuario = ?
+    `).run(
+      `excluida-${req.user.id_usuario}-${crypto.randomBytes(6).toString("hex")}@vestible.invalid`,
+      bcrypt.hashSync(crypto.randomBytes(24).toString("hex"), 10),
+      req.user.id_usuario
+    );
+  });
+  deleteAccount();
+  res.setHeader("Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  res.json({ ok: true, message: "Conta excluída. Este e-mail ficará reservado por 24 horas." });
 });
 
 app.get("/api/dashboard", authRequired, (req, res) => {
@@ -559,11 +818,20 @@ app.post("/api/respostas", authRequired, (req, res) => {
 
   const registrar = db.transaction(() => {
     const correta = alternativa === question.resposta_correta ? 1 : 0;
-    const before = db.prepare("SELECT questoes_feitas_hoje, streak FROM usuario WHERE id_usuario = ?")
+    const before = db.prepare("SELECT streak, data_ultima_atividade, questoes_feitas_hoje FROM usuario WHERE id_usuario = ?")
       .get(req.user.id_usuario);
-    if (before.questoes_feitas_hoje === 0) {
-      db.prepare("UPDATE usuario SET streak = ? WHERE id_usuario = ?")
-        .run(before.streak + 1, req.user.id_usuario);
+    let nextStreak = before.streak;
+    if (before.data_ultima_atividade !== today()) {
+      if (!before.data_ultima_atividade) {
+        nextStreak = 1;
+      } else {
+        const previous = new Date(`${before.data_ultima_atividade}T00:00:00Z`);
+        const current = new Date(`${today()}T00:00:00Z`);
+        const diff = Math.round((current - previous) / 86400000);
+        nextStreak = diff === 1 ? before.streak + 1 : 1;
+      }
+      db.prepare("UPDATE usuario SET streak = ?, data_ultima_atividade = ? WHERE id_usuario = ?")
+        .run(nextStreak, today(), req.user.id_usuario);
     }
     if (correta) {
       db.prepare("UPDATE usuario SET xp = xp + 10 WHERE id_usuario = ?").run(req.user.id_usuario);
@@ -839,6 +1107,10 @@ function finishDuel(match, reason = "concluido", disconnectUserId = null) {
   if (match.finished) return;
   match.finished = true;
   if (match.timer) clearInterval(match.timer);
+  if (match.disconnectTimers) {
+    for (const timer of match.disconnectTimers.values()) clearTimeout(timer);
+    match.disconnectTimers.clear();
+  }
 
   let winnerId = null;
   let empate = false;
@@ -947,11 +1219,13 @@ function finishDuel(match, reason = "concluido", disconnectUserId = null) {
 function startDuel(match) {
   match.startedAt = Date.now();
   match.finished = false;
+  match.disconnectTimers = new Map();
   match.questions = getQuestionsForDuel();
   match.players.forEach((player) => {
     player.respostas = 0;
     player.acertos = 0;
     player.tempo_total = 0;
+    player.ultimo_resposta = null;
     player.respondidas = new Set();
   });
   activeDuels.set(match.code, match);
@@ -991,6 +1265,9 @@ io.use((socket, next) => {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(payload.id);
     if (!user) return next(new Error("Usuário inválido"));
+    if (user.conta_excluida || !user.email_verificado) {
+      return next(new Error("Conta não disponível"));
+    }
     socket.duelUser = user;
     next();
   } catch {
@@ -999,6 +1276,28 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
+  if (socket.duelUser) {
+    for (const match of activeDuels.values()) {
+      if (match.finished) continue;
+      const player = match.players.find((entry) =>
+        entry.user.id_usuario === socket.duelUser.id_usuario
+      );
+      if (player) {
+        if (match.disconnectTimers?.has(player.user.id_usuario)) {
+          clearTimeout(match.disconnectTimers.get(player.user.id_usuario));
+          match.disconnectTimers.delete(player.user.id_usuario);
+        }
+        player.socketId = socket.id;
+        socket.join(match.code);
+        socket.emit("duelo_reconectado", {
+          code: match.code,
+          mode: match.mode,
+          duration: match.duration
+        });
+        emitMatchState(match);
+      }
+    }
+  }
   socket.on("telao_entrar", (code) => {
     const normalized = String(code || "").trim().toUpperCase();
     const match = activeDuels.get(normalized);
@@ -1009,6 +1308,13 @@ io.on("connection", (socket) => {
 
   socket.on("duelo_buscar", ({ mode, duration } = {}) => {
     if (!socket.duelUser) return socket.emit("duelo_erro", "Autenticação obrigatória.");
+    for (const queue of duelQueues.values()) {
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].socketId === socket.id || queue[i].userId === socket.duelUser.id_usuario) {
+          queue.splice(i, 1);
+        }
+      }
+    }
     const normalizedMode = mode === "blitz" ? "blitz" : "conhecimento";
     const normalizedDuration = normalizedMode === "blitz"
       ? Math.min(5, Math.max(1, Number(duration) || 1)) * 60
@@ -1017,8 +1323,6 @@ io.on("connection", (socket) => {
     if (!duelQueues.has(queueKey)) duelQueues.set(queueKey, []);
     const queue = duelQueues.get(queueKey);
 
-    const existingIndex = queue.findIndex((entry) => entry.socketId === socket.id);
-    if (existingIndex >= 0) queue.splice(existingIndex, 1);
     if (queue.some((entry) => entry.userId === socket.duelUser.id_usuario)) {
       socket.emit("duelo_aguardando", { mode: normalizedMode });
       return;
@@ -1040,8 +1344,8 @@ io.on("connection", (socket) => {
         mode: normalizedMode,
         duration: normalizedDuration,
         players: [
-          { socketId: first.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(first.userId), respostas: 0, acertos: 0, tempo_total: 0, respondidas: new Set() },
-          { socketId: second.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(second.userId), respostas: 0, acertos: 0, tempo_total: 0, respondidas: new Set() }
+          { socketId: first.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(first.userId), respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() },
+          { socketId: second.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(second.userId), respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() }
         ],
         finished: false,
         timer: null,
@@ -1062,7 +1366,15 @@ io.on("connection", (socket) => {
     const normalizedCode = String(code || "").toUpperCase();
     const match = activeDuels.get(normalizedCode);
     if (!match || match.finished) return;
-    const player = match.players.find((entry) => entry.socketId === socket.id);
+    if (match.mode === "blitz" &&
+        Date.now() - match.startedAt >= match.duration * 1000) {
+      finishDuel(match, "blitz");
+      return;
+    }
+    const player = match.players.find((entry) =>
+      entry.socketId === socket.id ||
+      entry.user.id_usuario === socket.duelUser?.id_usuario
+    );
     if (!player) return;
     const index = Number(questionIndex);
     if (!Number.isInteger(index) || index < 0 || index >= match.questions.length) return;
@@ -1070,7 +1382,11 @@ io.on("connection", (socket) => {
     const question = match.questions[index];
     const normalizedAnswer = String(alternativa || "").trim().toUpperCase();
     if (!["A", "B", "C", "D", "E"].includes(normalizedAnswer)) return;
-    const elapsed = (Date.now() - match.startedAt) / 1000;
+    const now = Date.now();
+    const elapsed = player.ultimo_resposta
+      ? (now - player.ultimo_resposta) / 1000
+      : (now - match.startedAt) / 1000;
+    player.ultimo_resposta = now;
     const correta = normalizedAnswer === question.resposta_correta;
     player.respondidas.add(index);
     player.respostas += 1;
@@ -1099,7 +1415,16 @@ io.on("connection", (socket) => {
       if (match.finished) continue;
       const player = match.players.find((entry) => entry.socketId === socket.id);
       if (player) {
-        finishDuel(match, "desistencia", player.user.id_usuario);
+        if (!match.disconnectTimers) match.disconnectTimers = new Map();
+        if (match.disconnectTimers.has(player.user.id_usuario)) {
+          clearTimeout(match.disconnectTimers.get(player.user.id_usuario));
+        }
+        const timer = setTimeout(() => {
+          if (!match.finished) {
+            finishDuel(match, "desistencia", player.user.id_usuario);
+          }
+        }, 15000);
+        match.disconnectTimers.set(player.user.id_usuario, timer);
       }
     }
   });

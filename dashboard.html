@@ -28,7 +28,7 @@
           <div class="meta">Nível <span data-bind="level">--</span> · <span data-bind="streak">--</span>d 🔥</div>
         </div>
       </div>
-      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
+      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">0/1000</span></div>
       <div class="xp-track"><div class="xp-fill" data-bind="xp-fill" style="width:0"></div></div>
       <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
     </div>
@@ -40,14 +40,14 @@
         <h1>Olá, <span data-bind="name">...</span>! 👋</h1>
         <p class="subtitle">Você fez <span data-bind="questions-done">0</span> questões hoje. Continue estudando!</p>
       </div>
-      <div class="pill"><span class="fire">🔥</span> <span data-bind="streak">7</span> dias <span class="sub">seguidos</span></div>
+      <div class="pill"><span class="fire">🔥</span> <span data-bind="streak">0</span> dias <span class="sub">seguidos</span></div>
     </div>
 
     <div class="stat-grid">
-      <div class="stat-card"><div class="label">Ranking ${ICON.crown}</div><div class="value" data-bind="ranking">#234</div></div>
-      <div class="stat-card"><div class="label">Nível atual ${ICON.star}</div><div class="value" data-bind="level">12</div></div>
+      <div class="stat-card"><div class="label">Ranking ${ICON.crown}</div><div class="value" data-bind="ranking">—</div></div>
+      <div class="stat-card"><div class="label">Nível atual ${ICON.star}</div><div class="value" data-bind="level">1</div></div>
       <div class="stat-card"><div class="label">Questões hoje ${ICON.target}</div><div class="value" data-bind="questions-done">0</div></div>
-      <div class="stat-card"><div class="label">XP acumulado ${ICON.bolt}</div><div class="value" data-bind="xp">847</div></div>
+      <div class="stat-card"><div class="label">XP acumulado ${ICON.bolt}</div><div class="value" data-bind="xp">0</div></div>
     </div>
 
     <div class="card">
@@ -109,8 +109,17 @@
       const data = await api("/api/dashboard");
       const u = data.user;
       applyProfileVisuals(u);
+      if(u.animacao_streak){
+        const previousStreak = Number(localStorage.getItem("vestible_last_streak") || 0);
+        if(u.streak > previousStreak){
+          const pill = document.querySelector(".pill");
+          pill?.classList.add("streak-increased");
+          setTimeout(() => pill?.classList.remove("streak-increased"), 900);
+        }
+        localStorage.setItem("vestible_last_streak", String(u.streak));
+      }
       document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent = u.nome);
-      document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent = u.nome.split(" ").map(w=>w[0]).slice(0,2).join("").toUpper());
+      document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent = u.nome.split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("").toUpperCase());
       document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent = u.nivel);
       document.querySelectorAll("[data-bind='streak']").forEach(el => el.textContent = u.streak);
       document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent = u.xp);
@@ -120,7 +129,7 @@
       document.querySelectorAll("[data-bind='ranking']").forEach(el => el.textContent = `#${data.rankingPosition}`);
       const dotsRow = document.getElementById("dotsRow");
       dotsRow.innerHTML = "";
-      const dotCount = Math.max(10, u.questoes_feitas_hoje);
+      const dotCount = u.questoes_feitas_hoje;
       for(let i=0;i<dotCount;i++){
         dotsRow.insertAdjacentHTML("beforeend", `<span class="dot ${i < u.questoes_feitas_hoje ? "done" : ""}"></span>`);
       }

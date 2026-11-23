@@ -28,7 +28,7 @@
           <div class="meta">Nível <span data-bind="level">--</span> · <span data-bind="streak">--</span>d 🔥</div>
         </div>
       </div>
-      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">847/1000</span></div>
+      <div class="xp-label"><span>XP</span><span data-bind="xp-fraction">0/1000</span></div>
       <div class="xp-track"><div class="xp-fill" data-bind="xp-fill" style="width:0"></div></div>
       <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
     </div>
@@ -43,7 +43,12 @@
 
     <div class="content-layout">
       <div class="card topic-list" id="topicList" style="align-self:start;">
+        <div class="content-filters">
+          <div class="content-search"><input type="search" id="contentSearch" placeholder="Pesquisar assunto"></div>
+          <div class="discipline-filters" id="disciplineFilters"></div>
+        </div>
         <h3 style="font-size:.95rem;margin-bottom:2px;">Tópicos</h3>
+        <div id="topicItems"></div>
       </div>
 
       <div>
@@ -106,19 +111,35 @@
     const selected = selectedMaterialId
       ? materials.find(m => m.id_material === selectedMaterialId)
       : (selectedDiscipline ? materials.find(m => m.disciplina === selectedDiscipline) : materials[0]);
-    const first = selected || materials[0];
-    const topicList = document.getElementById("topicList");
-    const groups = {};
-    materials.forEach(m => (groups[m.disciplina] ||= []).push(m));
-    topicList.innerHTML = `<h3 style="font-size:.95rem;margin-bottom:2px;">Tópicos</h3>` + Object.entries(groups).map(([subject,items]) =>
-      `<div class="group-label">${escapeHtml(subject)}</div>` + items.map(m =>
-        `<a href="conteudo.html?disciplina=${encodeURIComponent(m.disciplina)}&material=${m.id_material}" class="topic-item ${first && m.id_material===first.id_material?"active":""}"><div class="t-title">${escapeHtml(m.tema)}</div><div class="t-sub">${escapeHtml(m.titulo)}</div></a>`
-      ).join("")
-    ).join("");
-    if(params.get("from") === "erro"){
-      document.getElementById("remediationBanner").innerHTML = `<div class="remediation-banner">✕ Você errou essa questão! Assista à videoaula ou leia o resumo.</div>`;
+    let first = selected || materials[0];
+    let disciplineFilter = selectedDiscipline || "Todas";
+    const disciplines = ["Todas", ...[...new Set(materials.map(m => m.disciplina))].sort((a,b) => a.localeCompare(b,"pt-BR"))];
+
+    function renderTopics(){
+      const search = document.getElementById("contentSearch").value.trim().toLowerCase();
+      const filtered = materials.filter(m =>
+        (disciplineFilter === "Todas" || m.disciplina === disciplineFilter) &&
+        (!search || `${m.tema} ${m.titulo} ${m.disciplina}`.toLowerCase().includes(search))
+      );
+      const groups = {};
+      filtered.forEach(m => (groups[m.disciplina] ||= []).push(m));
+      const items = document.getElementById("topicItems");
+      items.innerHTML = filtered.length ? Object.entries(groups).map(([subject,items]) =>
+        `<div class="group-label">${escapeHtml(subject)}</div>` + items.map(m =>
+          `<button type="button" class="topic-item ${first && m.id_material===first.id_material?"active":""}" data-material="${m.id_material}" style="width:100%;text-align:left;border-top:0;border-right:0;border-bottom:0;background:transparent;color:inherit;font-family:inherit;"><div class="t-title">${escapeHtml(m.tema)}</div><div class="t-sub">${escapeHtml(m.titulo)}</div></button>`
+        ).join("")
+      ).join("") : `<div class="topic-empty">Nenhum assunto encontrado.</div>`;
+      items.querySelectorAll(".topic-item").forEach(button => {
+        button.addEventListener("click", () => {
+          first = materials.find(m => m.id_material === Number(button.dataset.material));
+          renderTopics();
+          renderSelectedMaterial();
+        });
+      });
     }
-    if(first){
+
+    function renderSelectedMaterial(){
+      if(!first) return;
       document.getElementById("breadcrumb").innerHTML = `${escapeHtml(first.disciplina)} <span style="opacity:.5;">›</span> <b>${escapeHtml(first.tema)}</b>`;
       document.getElementById("videoTitle").textContent = first.titulo;
       document.getElementById("videoSub").textContent = `Vestible · ${first.disciplina}`;
@@ -126,8 +147,26 @@
       document.getElementById("practiceBtn").href = `praticar.html?subject=${encodeURIComponent(first.disciplina)}`;
       document.getElementById("playBtn").onclick = () => {
         if(first.link_video) window.open(first.link_video, "_blank");
+        else showToast("Este material não possui videoaula cadastrada.");
       };
     }
+
+    document.getElementById("disciplineFilters").innerHTML = disciplines.map(d =>
+      `<button type="button" class="discipline-filter ${d === disciplineFilter ? "active" : ""}" data-discipline="${escapeHtml(d)}">${escapeHtml(d)}</button>`
+    ).join("");
+    document.querySelectorAll(".discipline-filter").forEach(button => {
+      button.addEventListener("click", () => {
+        disciplineFilter = button.dataset.discipline;
+        document.querySelectorAll(".discipline-filter").forEach(b => b.classList.toggle("active", b === button));
+        renderTopics();
+      });
+    });
+    document.getElementById("contentSearch").addEventListener("input", renderTopics);
+    renderTopics();
+    if(params.get("from") === "erro"){
+      document.getElementById("remediationBanner").innerHTML = `<div class="remediation-banner">✕ Você errou essa questão! Assista à videoaula ou leia o resumo.</div>`;
+    }
+    renderSelectedMaterial();
   }
 
   document.getElementById('tabVideo').addEventListener('click', () => {

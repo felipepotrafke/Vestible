@@ -72,6 +72,57 @@
         <button class="btn btn-primary" type="submit">Salvar alterações</button>
       </form>
     </section>
+
+    <div class="settings-stack">
+      <section class="card on-paper settings-section">
+        <h2>Acessibilidade</h2>
+        <p class="settings-description">Ajuste as cores e movimentos da plataforma às suas necessidades.</p>
+        <div class="setting-row">
+          <div><strong>Modo para daltonismo</strong><small>Adapta cores de feedback e destaque.</small></div>
+          <select class="setting-select" id="daltonismoMode">
+            <option value="nenhum">Nenhum</option>
+            <option value="protanopia">Protanopia</option>
+            <option value="deuteranopia">Deuteranopia</option>
+            <option value="tritanopia">Tritanopia</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <div><strong>Reduzir movimentos</strong><small>Desativa animações e transições decorativas.</small></div>
+          <label class="setting-toggle"><input type="checkbox" id="reducedMotion"><span></span></label>
+        </div>
+        <div class="setting-row">
+          <div><strong>Animação da streak</strong><small>Exibe uma animação ao aumentar sua sequência diária.</small></div>
+          <label class="setting-toggle"><input type="checkbox" id="streakAnimation"><span></span></label>
+        </div>
+        <div class="setting-row">
+          <div><strong>Notificações</strong><small>Permite avisos de lembrete e atividade da conta.</small></div>
+          <label class="setting-toggle"><input type="checkbox" id="notifications"><span></span></label>
+        </div>
+        <button type="button" class="btn btn-primary" id="savePreferences" style="margin-top:16px;">Salvar preferências</button>
+      </section>
+
+      <section class="card on-paper settings-section">
+        <h2>Segurança da conta</h2>
+        <p class="settings-description">Altere sua senha usando sua senha atual.</p>
+        <form id="passwordForm">
+          <div class="settings-grid">
+            <div class="field"><label for="currentPassword">Senha atual</label><div class="input-wrap"><input id="currentPassword" type="password" autocomplete="current-password" required></div></div>
+            <div class="field"><label for="newPassword">Nova senha</label><div class="input-wrap"><input id="newPassword" type="password" minlength="8" autocomplete="new-password" required></div></div>
+            <div class="field"><label for="confirmPassword">Confirmar nova senha</label><div class="input-wrap"><input id="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></div></div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top:8px;">Alterar senha</button>
+        </form>
+      </section>
+
+      <section class="card on-paper settings-section danger-card">
+        <h2>Excluir conta</h2>
+        <p class="settings-description">Sua conta, respostas e dados pessoais serão removidos. Por segurança, o mesmo e-mail não poderá ser usado para criar outra conta durante 24 horas.</p>
+        <div class="danger-actions">
+          <div class="field"><label for="deletePassword">Senha para confirmar</label><div class="input-wrap"><input id="deletePassword" type="password" autocomplete="current-password"></div></div>
+          <button type="button" class="btn btn-danger" id="deleteAccount">Excluir permanentemente</button>
+        </div>
+      </section>
+    </div>
   </main>
 </div>
 <nav class="bottom-nav">
@@ -110,6 +161,10 @@
     document.getElementById("profileColor").value = currentUser.foto_cor || "azul";
     document.getElementById("profileAvatar").value = currentUser.foto_avatar || "";
     document.getElementById("previewEmail").textContent = currentUser.email;
+    document.getElementById("daltonismoMode").value = currentUser.modo_daltonismo || "nenhum";
+    document.getElementById("reducedMotion").checked = Boolean(currentUser.reducao_movimento);
+    document.getElementById("streakAnimation").checked = Boolean(currentUser.animacao_streak);
+    document.getElementById("notifications").checked = Boolean(currentUser.notificacoes);
     document.querySelectorAll(".color-option").forEach(button => {
       button.classList.toggle("selected", button.dataset.color === currentUser.foto_cor);
       button.addEventListener("click", () => {
@@ -132,6 +187,46 @@
   }
 
   document.getElementById("profileName").addEventListener("input", updatePreview);
+  document.getElementById("savePreferences").addEventListener("click", async () => {
+    const body = {
+      modo_daltonismo: document.getElementById("daltonismoMode").value,
+      reducao_movimento: document.getElementById("reducedMotion").checked,
+      animacao_streak: document.getElementById("streakAnimation").checked,
+      notificacoes: document.getElementById("notifications").checked
+    };
+    try{
+      const data = await api("/api/me/preferences", {method:"PUT", body:JSON.stringify(body)});
+      currentUser = data.user;
+      applyProfileVisuals(currentUser);
+      showToast(data.message);
+    }catch(error){ showToast(error.message); }
+  });
+
+  document.getElementById("passwordForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const senhaAtual = document.getElementById("currentPassword").value;
+    const novaSenha = document.getElementById("newPassword").value;
+    const confirmacao = document.getElementById("confirmPassword").value;
+    try{
+      const data = await api("/api/me/password", {
+        method:"POST",
+        body:JSON.stringify({senha_atual:senhaAtual, nova_senha:novaSenha, confirmacao})
+      });
+      event.target.reset();
+      showToast(data.message);
+    }catch(error){ showToast(error.message); }
+  });
+  document.getElementById("deleteAccount").addEventListener("click", async () => {
+    const senha = document.getElementById("deletePassword").value;
+    if(!senha){ showToast("Digite sua senha para confirmar."); return; }
+    if(!window.confirm("Excluir sua conta? Seus dados pessoais e respostas serão removidos. Esta ação não pode ser revertida.")){ return; }
+    try{
+      await api("/api/me/delete", {method:"POST", body:JSON.stringify({senha})});
+      localStorage.removeItem("vestible_token");
+      localStorage.removeItem("vestible_user");
+      window.location.href = "index.html";
+    }catch(error){ showToast(error.message); }
+  });
   document.getElementById("profileForm").addEventListener("submit", async event => {
     event.preventDefault();
     const nome = document.getElementById("profileName").value.trim();

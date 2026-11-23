@@ -202,6 +202,9 @@ api("/api/me").then(data => {
   socket.on("connect_error", error => showToast(error.message));
   socket.on("duelo_aguardando", renderQueue);
   socket.on("duelo_inicio", renderMatch);
+  socket.on("duelo_reconectado", ({ code }) => {
+    showToast(`Reconectado à sala ${code}.`);
+  });
   socket.on("duelo_estado", updateScores);
   socket.on("duelo_tempo", ({ remaining }) => {
     const box = document.getElementById("timerBox");
