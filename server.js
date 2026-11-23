@@ -522,6 +522,9 @@ async function sendVerificationEmail(user, code) {
   }
   const smtpConfigured = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
   if (!smtpConfigured) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Nenhum provedor de e-mail configurado.");
+    }
     console.log(`[Vestible] Código de verificação para ${user.email}: ${code}`);
     return false;
   }
@@ -590,6 +593,11 @@ app.post("/api/auth/register", async (req, res) => {
     } catch (error) {
       emailError = error.message;
       console.error("[Vestible] Falha ao enviar e-mail de verificação:", error.message);
+      db.prepare("DELETE FROM usuario WHERE id_usuario = ?").run(user.id_usuario);
+      return res.status(502).json({
+        error: "Não foi possível enviar o e-mail de verificação. Tente novamente em alguns minutos.",
+        emailConfigured: false
+      });
     }
     res.status(201).json({
       requiresVerification: true,
@@ -644,16 +652,6 @@ app.post("/api/auth/resend-verification", async (req, res) => {
     return res.status(429).json({ error: "Aguarde 1 minuto antes de solicitar outro código." });
   }
   const code = createVerificationCode();
-  db.prepare(`
-    UPDATE usuario
-    SET codigo_verificacao = ?, codigo_expira_em = ?, codigo_enviado_em = ?
-    WHERE id_usuario = ?
-  `).run(
-    bcrypt.hashSync(code, 10),
-    new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    new Date().toISOString(),
-    user.id_usuario
-  );
   try {
     const emailSent = await sendVerificationEmail(user, code);
     if (!emailSent) {
@@ -669,6 +667,16 @@ app.post("/api/auth/resend-verification", async (req, res) => {
       emailConfigured: true
     });
   }
+  db.prepare(`
+    UPDATE usuario
+    SET codigo_verificacao = ?, codigo_expira_em = ?, codigo_enviado_em = ?
+    WHERE id_usuario = ?
+  `).run(
+    bcrypt.hashSync(code, 10),
+    new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    new Date().toISOString(),
+    user.id_usuario
+  );
   res.json({ ok: true, message: "Um novo código foi enviado para seu e-mail." });
 });
 

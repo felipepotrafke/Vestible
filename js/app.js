@@ -99,8 +99,8 @@ function requireLogin(){
 async function api(path, options = {}){
   const token = localStorage.getItem("vestible_token");
   const headers = options.body instanceof FormData
-    ? { ...(options.headers || {}) }
-    : { "Content-Type": "application/json", ...(options.headers || {}) };
+    ? { Accept: "application/json", ...(options.headers || {}) }
+    : { "Content-Type": "application/json", Accept: "application/json", ...(options.headers || {}) };
   if(token) headers.Authorization = `Bearer ${token}`;
   let response;
   let rawText = "";
