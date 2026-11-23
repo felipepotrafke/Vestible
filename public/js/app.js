@@ -153,9 +153,98 @@ function applyAccessibilityPreferences(user){
   document.body.dataset.reducedMotion = user.reducao_movimento ? "true" : "false";
 }
 
+function ensureMobileNavigation(){
+  if(!localStorage.getItem("vestible_token")) return;
+  if(!document.querySelector(".bottom-nav")) return;
+
+  const nav = document.querySelector(".bottom-nav ul");
+  if(nav){
+    const required = [
+      ["dashboard.html", ICON.home, "Início"],
+      ["praticar.html", ICON.book, "Praticar"],
+      ["duelo.html", ICON.swords, "Batalha"],
+      ["conteudo.html", ICON.video, "Conteúdo"],
+      ["perfil.html", "⚙", "Perfil"]
+    ];
+    for(const [href, icon, label] of required){
+      if(!nav.querySelector(`a[href="${href}"]`)){
+        const li = document.createElement("li");
+        li.innerHTML = `<a href="${href}">${icon}<span>${label}</span></a>`;
+        nav.appendChild(li);
+      }
+    }
+
+    nav.querySelectorAll("a").forEach(link => {
+      const linkPage = link.getAttribute("href")?.split(/[?#]/)[0];
+      const page = location.pathname.split("/").pop();
+      link.classList.toggle("active", linkPage === page);
+      const battleLink = linkPage === "duelo.html" ? link : null;
+      if(battleLink && !battleLink.querySelector("svg")){
+        battleLink.insertAdjacentHTML("afterbegin", ICON.swords);
+      }
+      if(linkPage === "perfil.html" && !link.querySelector("svg")){
+        link.insertAdjacentHTML("afterbegin", `<span class="mobile-profile-icon">⚙</span>`);
+      }
+    });
+  }
+}
+
+function renderMobileProfile(user){
+  if(!localStorage.getItem("vestible_token")) return;
+  ensureMobileNavigation();
+  let header = document.querySelector(".mobile-header");
+  if(!header){
+    header = document.createElement("header");
+    header.className = "mobile-header";
+    header.innerHTML = `
+      <a class="mobile-brand" href="dashboard.html" aria-label="Ir para o início">
+        <img src="assets/logo.svg" alt="Vestible">
+      </a>
+      <button class="mobile-user-button" type="button" aria-label="Abrir menu da conta" aria-expanded="false">
+        <div class="mobile-avatar" data-bind="initials">--</div>
+        <span class="mobile-user-copy">
+          <strong data-bind="name">Carregando...</strong>
+          <small>Nível <span data-bind="level">--</span></small>
+        </span>
+        <span class="mobile-menu-chevron">⌄</span>
+      </button>
+      <div class="mobile-user-menu" role="menu">
+        <a href="perfil.html" role="menuitem">⚙ Configurações</a>
+        <button type="button" role="menuitem" data-mobile-logout>Sair da conta</button>
+      </div>`;
+    document.body.prepend(header);
+    const button = header.querySelector(".mobile-user-button");
+    const menu = header.querySelector(".mobile-user-menu");
+    button.addEventListener("click", () => {
+      const open = header.classList.toggle("menu-open");
+      button.setAttribute("aria-expanded", String(open));
+    });
+    document.addEventListener("click", event => {
+      if(!header.contains(event.target)){
+        header.classList.remove("menu-open");
+        button.setAttribute("aria-expanded", "false");
+      }
+    });
+    header.querySelector("[data-mobile-logout]").addEventListener("click", () => logout());
+  }
+  header.querySelectorAll("[data-bind='name']").forEach(el => el.textContent = user.nome);
+  header.querySelectorAll("[data-bind='level']").forEach(el => el.textContent = user.nivel);
+  const avatar = header.querySelector(".mobile-avatar");
+  if(avatar){
+    avatar.className = "mobile-avatar";
+    avatar.dataset.color = user.foto_cor || "azul";
+    const initials = user.nome.split(" ").filter(Boolean).map(word => word[0]).slice(0,2).join("").toUpperCase();
+    avatar.classList.toggle("has-avatar", Boolean(user.foto_avatar));
+    avatar.innerHTML = user.foto_avatar
+      ? `<img src="assets/avatar/${encodeURIComponent(user.foto_avatar)}.png" alt="Avatar de ${escapeHtml(user.nome)}">`
+      : escapeHtml(initials);
+  }
+}
+
 function applyProfileVisuals(user){
   if(!user) return;
   applyAccessibilityPreferences(user);
+  renderMobileProfile(user);
   document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent = user.nome);
   document.querySelectorAll("[data-bind='initials']").forEach(el => {
     const initials = user.nome.split(" ").filter(Boolean).map(w => w[0]).slice(0,2).join("").toUpperCase();
@@ -186,6 +275,7 @@ async function logout(){
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  ensureMobileNavigation();
   document.querySelectorAll("[data-action='logout']").forEach(el => {
     el.addEventListener("click", (e) => { e.preventDefault(); logout(); });
   });

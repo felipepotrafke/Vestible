@@ -63,6 +63,21 @@ test("servidor entrega páginas públicas e rejeita API sem sessão", async () =
   assert.equal(api.response.status, 401);
 });
 
+test("layout móvel inclui batalha, perfil, avatar e saída da conta", () => {
+  const practice = fs.readFileSync(path.resolve(__dirname, "../public/praticar.html"), "utf8");
+  const app = fs.readFileSync(path.resolve(__dirname, "../public/js/app.js"), "utf8");
+  const css = fs.readFileSync(path.resolve(__dirname, "../public/css/style.css"), "utf8");
+
+  assert.match(practice, /duelo\.html/);
+  assert.match(practice, /Batalha/);
+  assert.match(app, /mobile-header/);
+  assert.match(app, /perfil\.html/);
+  assert.match(app, /data-mobile-logout/);
+  assert.match(app, /renderMobileProfile/);
+  assert.match(css, /@media \(max-width:820px\)/);
+  assert.match(css, /\.bottom-nav/);
+});
+
 test("banco possui matérias e assuntos específicos válidos", async () => {
   const adminLogin = await request(`${baseUrl}/api/auth/login`, {
     method: "POST",
