@@ -51,7 +51,7 @@
   </ul>
 </nav>
 
-<script src="js/app.js?v=20261123"></script>
+<script src="js/app.js?v=20261123b"></script>
 <script src="js/data.js"></script>
 <script>
   requireLogin();
@@ -63,7 +63,6 @@
     const u = me.user;
     applyProfileVisuals(u);
     document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent=u.nome);
-    document.querySelectorAll("[data-bind='initials']").forEach(el => el.textContent=u.nome.split(" ").map(w=>w[0]).slice(0,2).join(""));
     document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent=u.nivel);
     document.querySelectorAll("[data-bind='streak']").forEach(el => el.textContent=u.streak);
     document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent=u.xp);

@@ -159,12 +159,11 @@ function applyProfileVisuals(user){
   document.querySelectorAll("[data-bind='name']").forEach(el => el.textContent = user.nome);
   document.querySelectorAll("[data-bind='initials']").forEach(el => {
     const initials = user.nome.split(" ").filter(Boolean).map(w => w[0]).slice(0,2).join("").toUpperCase();
-    el.textContent = user.foto_avatar ? "" : initials;
     el.classList.toggle("has-avatar", Boolean(user.foto_avatar));
     if(user.foto_avatar){
-      el.innerHTML = `<img src="assets/avatar/${encodeURIComponent(user.foto_avatar)}.png" alt="Avatar de ${escapeHtml(user.nome)}">`;
+      el.innerHTML = `<img src="assets/avatar/${encodeURIComponent(user.foto_avatar)}.png?v=20261123" alt="Avatar de ${escapeHtml(user.nome)}">`;
     }else{
-      el.querySelector("img")?.remove();
+      el.textContent = initials;
     }
   });
   document.querySelectorAll(".avatar").forEach(el => el.dataset.color = user.foto_cor || "azul");
