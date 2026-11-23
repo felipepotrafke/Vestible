@@ -159,12 +159,11 @@ function ensureMobileNavigation(){
 
   const nav = document.querySelector(".bottom-nav ul");
   if(nav){
+    nav.querySelectorAll('a[href="dashboard.html"], a[href="perfil.html"]').forEach(link => link.closest("li")?.remove());
     const required = [
-      ["dashboard.html", ICON.home, "Início"],
       ["praticar.html", ICON.book, "Praticar"],
       ["duelo.html", ICON.swords, "Batalha"],
-      ["conteudo.html", ICON.video, "Conteúdo"],
-      ["perfil.html", "⚙", "Perfil"]
+      ["conteudo.html", ICON.video, "Conteúdo"]
     ];
     for(const [href, icon, label] of required){
       if(!nav.querySelector(`a[href="${href}"]`)){
