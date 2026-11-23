@@ -65,6 +65,7 @@ test("servidor entrega páginas públicas e rejeita API sem sessão", async () =
 
 test("layout móvel inclui batalha, perfil, avatar e saída da conta", () => {
   const practice = fs.readFileSync(path.resolve(__dirname, "../public/praticar.html"), "utf8");
+  const login = fs.readFileSync(path.resolve(__dirname, "../public/index.html"), "utf8");
   const app = fs.readFileSync(path.resolve(__dirname, "../public/js/app.js"), "utf8");
   const css = fs.readFileSync(path.resolve(__dirname, "../public/css/style.css"), "utf8");
 
@@ -76,6 +77,10 @@ test("layout móvel inclui batalha, perfil, avatar e saída da conta", () => {
   assert.match(app, /renderMobileProfile/);
   assert.match(css, /@media \(max-width:820px\)/);
   assert.match(css, /\.bottom-nav/);
+  assert.match(css, /a\[href="dashboard\.html"\]/);
+  assert.match(css, /a\[href="perfil\.html"\]/);
+  assert.match(login, /class="toggle-eye"/);
+  assert.match(login, /aria-label="Mostrar senha"/);
 });
 
 test("banco possui matérias e assuntos específicos válidos", async () => {

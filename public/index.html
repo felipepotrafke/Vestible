@@ -6,7 +6,7 @@
 <title>Vestible — Entrar</title>
 <link rel="icon" href="assets/logo.svg">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=20261123d">
 </head>
 <body>
 
@@ -46,16 +46,20 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261123"></script>
+<script src="js/app.js?v=20261123d"></script>
 <script>
   // icons for the input fields
   document.querySelectorAll('.input-wrap')[0].insertAdjacentHTML('afterbegin', ICON.mail);
   const pwWrap = document.querySelectorAll('.input-wrap')[1];
   pwWrap.insertAdjacentHTML('afterbegin', ICON.lock);
-  pwWrap.insertAdjacentHTML('beforeend', `<span class="toggle-eye" style="position:absolute;">${ICON.eye}</span>`);
-  pwWrap.querySelector('.toggle-eye').addEventListener('click', () => {
+  pwWrap.insertAdjacentHTML('beforeend', `<button type="button" class="toggle-eye" aria-label="Mostrar senha" aria-pressed="false">${ICON.eye}</button>`);
+  pwWrap.querySelector('.toggle-eye').addEventListener('click', (event) => {
+    const button = event.currentTarget;
     const input = document.getElementById('password');
-    input.type = input.type === 'password' ? 'text' : 'password';
+    const showing = input.type === 'password';
+    input.type = showing ? 'text' : 'password';
+    button.setAttribute('aria-label', showing ? 'Ocultar senha' : 'Mostrar senha');
+    button.setAttribute('aria-pressed', String(showing));
   });
 
   let cadastro = false;
