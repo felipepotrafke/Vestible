@@ -46,7 +46,7 @@
   </div>
 </div>
 
-<script src="js/app.js"></script>
+<script src="js/app.js?v=20261123"></script>
 <script>
   // icons for the input fields
   document.querySelectorAll('.input-wrap')[0].insertAdjacentHTML('afterbegin', ICON.mail);
@@ -147,8 +147,45 @@
     const pass = document.getElementById('password').value.trim();
     const err = document.getElementById('errorMsg');
     if(!email || !pass){
+      err.textContent = !email
+        ? "Informe seu e-mail."
+        : "Informe sua senha.";
       err.classList.add('show');
       return;
+    }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      err.textContent = "Informe um e-mail válido.";
+      err.classList.add("show");
+      document.getElementById("email").focus();
+      return;
+    }
+    if(cadastro){
+      const name = document.getElementById("registerName")?.value.trim();
+      const confirmation = document.getElementById("confirmPassword")?.value;
+      if(!name){
+        err.textContent = "Informe seu nome.";
+        err.classList.add("show");
+        document.getElementById("registerName")?.focus();
+        return;
+      }
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+        err.textContent = "Informe um e-mail válido.";
+        err.classList.add("show");
+        document.getElementById("email").focus();
+        return;
+      }
+      if(pass.length < 8){
+        err.textContent = "A senha deve ter pelo menos 8 caracteres.";
+        err.classList.add("show");
+        document.getElementById("password").focus();
+        return;
+      }
+      if(pass !== confirmation){
+        err.textContent = "A confirmação da senha não coincide.";
+        err.classList.add("show");
+        document.getElementById("confirmPassword")?.focus();
+        return;
+      }
     }
     err.classList.remove('show');
     try {
@@ -191,6 +228,11 @@
       }
       err.textContent = error.message;
       err.classList.add("show");
+      if(error.field === "nome") document.getElementById("registerName")?.focus();
+      if(error.field === "email") document.getElementById("email")?.focus();
+      if(error.field === "senha") document.getElementById("password")?.focus();
+      if(error.field === "confirmacao") document.getElementById("confirmPassword")?.focus();
+      if(error.field === "codigo") document.getElementById("verificationCode")?.focus();
     }
   });
 

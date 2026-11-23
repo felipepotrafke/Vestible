@@ -133,7 +133,7 @@
     <li><a href="ranking.html">${ICON.trophy}<span>Ranking</span></a></li>
   </ul>
 </nav>
-<script src="js/app.js"></script>
+<script src="js/app.js?v=20261123"></script>
 <script>
   requireLogin();
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
@@ -199,7 +199,9 @@
       currentUser = data.user;
       applyProfileVisuals(currentUser);
       showToast(data.message);
-    }catch(error){ showToast(error.message); }
+    }catch(error){
+      showToast(error.message);
+    }
   });
 
   document.getElementById("passwordForm").addEventListener("submit", async event => {
@@ -214,7 +216,12 @@
       });
       event.target.reset();
       showToast(data.message);
-    }catch(error){ showToast(error.message); }
+    }catch(error){
+      showToast(error.message);
+      if(error.field === "senha_atual") document.getElementById("currentPassword").focus();
+      if(error.field === "nova_senha") document.getElementById("newPassword").focus();
+      if(error.field === "confirmacao") document.getElementById("confirmPassword").focus();
+    }
   });
   document.getElementById("deleteAccount").addEventListener("click", async () => {
     const senha = document.getElementById("deletePassword").value;
@@ -225,7 +232,10 @@
       localStorage.removeItem("vestible_token");
       localStorage.removeItem("vestible_user");
       window.location.href = "index.html";
-    }catch(error){ showToast(error.message); }
+    }catch(error){
+      showToast(error.message);
+      if(error.field === "senha") document.getElementById("deletePassword").focus();
+    }
   });
   document.getElementById("profileForm").addEventListener("submit", async event => {
     event.preventDefault();

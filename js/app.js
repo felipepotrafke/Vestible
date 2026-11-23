@@ -102,17 +102,42 @@ async function api(path, options = {}){
     ? { ...(options.headers || {}) }
     : { "Content-Type": "application/json", ...(options.headers || {}) };
   if(token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(path, { ...options, headers, credentials: "same-origin" });
-  const data = await response.json().catch(() => ({}));
-  if(response.status === 401){
-    localStorage.removeItem("vestible_token");
-    localStorage.removeItem("vestible_user");
+  let response;
+  let rawText = "";
+  try{
+    response = await fetch(path, { ...options, headers, credentials: "same-origin" });
+    rawText = await response.text();
+  }catch(error){
+    throw new Error("Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.");
+  }
+  let data = {};
+  if(rawText){
+    try{ data = JSON.parse(rawText); }
+    catch{
+      if(response.status >= 500){
+        throw new Error("O servidor está indisponível no momento. Tente novamente em alguns instantes.");
+      }
+      throw new Error("O servidor respondeu com um formato inválido. Atualize a página e tente novamente.");
+    }
   }
   if(!response.ok){
-    const error = new Error(data.error || "Não foi possível concluir a operação.");
+    if(response.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/register"){
+      localStorage.removeItem("vestible_token");
+      localStorage.removeItem("vestible_user");
+    }
+    let fallback = "Não foi possível concluir a operação.";
+    if(response.status === 400) fallback = "Verifique os dados informados e tente novamente.";
+    if(response.status === 401) fallback = "E-mail ou senha inválidos.";
+    if(response.status === 403) fallback = "Você não tem permissão para realizar esta ação.";
+    if(response.status === 404) fallback = "Informação não encontrada.";
+    if(response.status === 409) fallback = "Este registro entra em conflito com uma conta ou dados existentes.";
+    if(response.status === 429) fallback = "Muitas tentativas. Aguarde um momento e tente novamente.";
+    if(response.status >= 500) fallback = "O servidor encontrou um erro. Tente novamente em alguns instantes.";
+    const error = new Error(String(data.error || data.message || fallback));
     error.status = response.status;
     error.requiresVerification = Boolean(data.requiresVerification);
-    error.email = data.email;
+    error.email = data.email || null;
+    error.field = data.field || null;
     throw error;
   }
   return data;

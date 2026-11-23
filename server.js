@@ -526,10 +526,11 @@ app.post("/api/auth/register", (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const senha = String(req.body.senha || "");
   const confirmacao = String(req.body.confirmacao || "");
-  if (!nome || !email) return res.status(400).json({ error: "Nome e e-mail são obrigatórios." });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Informe um e-mail válido." });
-  if (senha.length < 8) return res.status(400).json({ error: "A senha deve ter pelo menos 8 caracteres." });
-  if (senha !== confirmacao) return res.status(400).json({ error: "A confirmação da senha não coincide." });
+  if (!nome) return res.status(400).json({ error: "Informe seu nome.", field: "nome" });
+  if (!email) return res.status(400).json({ error: "Informe seu e-mail.", field: "email" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Informe um e-mail válido.", field: "email" });
+  if (senha.length < 8) return res.status(400).json({ error: "A senha deve ter pelo menos 8 caracteres.", field: "senha" });
+  if (senha !== confirmacao) return res.status(400).json({ error: "A confirmação da senha não coincide.", field: "confirmacao" });
   const reservation = db.prepare("SELECT disponivel_em FROM conta_exclusao WHERE email = ?").get(email);
   if (reservation) {
     const remaining = Date.parse(reservation.disponivel_em) - Date.now();
@@ -577,7 +578,7 @@ app.post("/api/auth/verify-email", (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const code = String(req.body.codigo || "").trim();
   if (!email || !/^\d{6}$/.test(code)) {
-    return res.status(400).json({ error: "Informe o e-mail e o código de 6 dígitos." });
+    return res.status(400).json({ error: "Informe o e-mail e o código de 6 dígitos.", field: "codigo" });
   }
   const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
   if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
@@ -634,7 +635,7 @@ app.post("/api/auth/login", (req, res) => {
   const senha = String(req.body.senha || "");
   const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
   if (!user || !bcrypt.compareSync(senha, user.senha)) {
-    return res.status(401).json({ error: "E-mail ou senha inválidos." });
+    return res.status(401).json({ error: "E-mail ou senha inválidos.", field: "senha" });
   }
   if (user.conta_excluida) {
     return res.status(403).json({ error: "Esta conta foi excluída." });
@@ -686,13 +687,13 @@ app.post("/api/me/password", authRequired, (req, res) => {
   const novaSenha = String(req.body.nova_senha || "");
   const confirmacao = String(req.body.confirmacao || "");
   if (!bcrypt.compareSync(senhaAtual, req.user.senha)) {
-    return res.status(400).json({ error: "A senha atual está incorreta." });
+    return res.status(400).json({ error: "A senha atual está incorreta.", field: "senha_atual" });
   }
   if (novaSenha.length < 8) {
-    return res.status(400).json({ error: "A nova senha deve ter pelo menos 8 caracteres." });
+    return res.status(400).json({ error: "A nova senha deve ter pelo menos 8 caracteres.", field: "nova_senha" });
   }
   if (novaSenha !== confirmacao) {
-    return res.status(400).json({ error: "A confirmação da nova senha não coincide." });
+    return res.status(400).json({ error: "A confirmação da nova senha não coincide.", field: "confirmacao" });
   }
   db.prepare("UPDATE usuario SET senha = ? WHERE id_usuario = ?")
     .run(bcrypt.hashSync(novaSenha, 10), req.user.id_usuario);
@@ -719,7 +720,7 @@ app.put("/api/me/preferences", authRequired, (req, res) => {
 app.post("/api/me/delete", authRequired, (req, res) => {
   const senha = String(req.body.senha || "");
   if (!bcrypt.compareSync(senha, req.user.senha)) {
-    return res.status(400).json({ error: "A senha está incorreta." });
+    return res.status(400).json({ error: "A senha está incorreta.", field: "senha" });
   }
   const email = req.user.email;
   const availableAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -1428,6 +1429,25 @@ io.on("connection", (socket) => {
       }
     }
   });
+});
+
+app.use((error, req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    if (error?.type === "entity.parse.failed") {
+      return res.status(400).json({ error: "Os dados enviados estão inválidos. Atualize a página e tente novamente." });
+    }
+    console.error("[Vestible] Erro da API:", error);
+    return res.status(error.status || 500).json({
+      error: error.status >= 400 && error.status < 500
+        ? (error.message || "Requisição inválida.")
+        : "O servidor encontrou um erro. Tente novamente em alguns instantes."
+    });
+  }
+  next(error);
+});
+
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "Recurso da API não encontrado." });
 });
 
 app.use(express.static(ROOT, {
