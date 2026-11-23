@@ -497,6 +497,29 @@ function createVerificationCode() {
 }
 
 async function sendVerificationEmail(user, code) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || "Vestible <onboarding@resend.dev>";
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from,
+        to: [user.email],
+        subject: "Confirme seu e-mail — Vestible",
+        text: `Olá, ${user.nome}!\n\nSeu código de verificação Vestible é: ${code}\n\nO código expira em 15 minutos.`,
+        html: `<div style="font-family:Arial,sans-serif;color:#182238"><h2>Confirme seu e-mail</h2><p>Use o código abaixo para concluir seu cadastro:</p><div style="font-size:32px;letter-spacing:8px;font-weight:bold;background:#f4efe2;padding:18px;border-radius:10px;width:max-content">${code}</div><p>O código expira em 15 minutos.</p></div>`
+      })
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`Resend recusou o envio (${response.status})${detail ? `: ${detail.slice(0,200)}` : ""}`);
+    }
+    return true;
+  }
   const smtpConfigured = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
   if (!smtpConfigured) {
     console.log(`[Vestible] Código de verificação para ${user.email}: ${code}`);
@@ -521,7 +544,7 @@ async function sendVerificationEmail(user, code) {
   return true;
 }
 
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   const nome = String(req.body.nome || "").trim();
   const email = String(req.body.email || "").trim().toLowerCase();
   const senha = String(req.body.senha || "");
@@ -560,13 +583,22 @@ app.post("/api/auth/register", (req, res) => {
       };
     });
     const { user, code } = register();
-    sendVerificationEmail(user, code).catch((error) => {
+    let emailSent = false;
+    let emailError = null;
+    try {
+      emailSent = await sendVerificationEmail(user, code);
+    } catch (error) {
+      emailError = error.message;
       console.error("[Vestible] Falha ao enviar e-mail de verificação:", error.message);
-    });
+    }
     res.status(201).json({
       requiresVerification: true,
       email,
-      message: "Cadastro criado. Enviamos um código de 6 dígitos para seu e-mail."
+      emailSent,
+      message: emailSent
+        ? "Cadastro criado. Enviamos um código de 6 dígitos para seu e-mail."
+        : "Cadastro criado, mas o e-mail ainda não pôde ser enviado. Configure o provedor de e-mail no servidor.",
+      emailError: process.env.NODE_ENV === "production" ? null : emailError
     });
   } catch (error) {
     console.error("[Vestible] Falha no cadastro:", error);
@@ -623,9 +655,19 @@ app.post("/api/auth/resend-verification", async (req, res) => {
     user.id_usuario
   );
   try {
-    await sendVerificationEmail(user, code);
+    const emailSent = await sendVerificationEmail(user, code);
+    if (!emailSent) {
+      return res.status(503).json({
+        error: "O provedor de e-mail não está configurado no servidor.",
+        emailConfigured: false
+      });
+    }
   } catch (error) {
     console.error("[Vestible] Falha ao reenviar e-mail de verificação:", error.message);
+    return res.status(502).json({
+      error: "Não foi possível enviar o e-mail agora. Tente novamente em alguns minutos.",
+      emailConfigured: true
+    });
   }
   res.json({ ok: true, message: "Um novo código foi enviado para seu e-mail." });
 });

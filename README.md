@@ -62,6 +62,13 @@ Projeto em desenvolvimento ativo.
 Para enviar os códigos de verificação por e-mail, configure estas variáveis de ambiente no servidor:
 
 ```bash
+RESEND_API_KEY=re_xxxxx
+EMAIL_FROM="Vestible <contato@seudominio.com>"
+```
+
+Também é possível usar SMTP:
+
+```bash
 SMTP_HOST=smtp.exemplo.com
 SMTP_PORT=587
 SMTP_SECURE=false

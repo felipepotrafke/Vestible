@@ -108,12 +108,14 @@
     document.getElementById("toLogin").addEventListener("click", showLogin);
   }
 
-  function showVerification(email){
+  function showVerification(email, emailSent = true, message = ""){
     verificacao = true;
     cadastro = false;
     verificationEmail = email;
     document.querySelector(".login-form h1").textContent = "Confirme seu e-mail";
-    document.querySelector(".login-form .lead").textContent = `Enviamos um código de 6 dígitos para ${email}`;
+    document.querySelector(".login-form .lead").textContent = emailSent
+      ? `Enviamos um código de 6 dígitos para ${email}`
+      : (message || `Não foi possível enviar o código para ${email}. Configure o e-mail no servidor ou reenvie.`);
     document.getElementById("registerNameField")?.remove();
     document.getElementById("confirmField")?.remove();
     document.querySelectorAll(".field").forEach(field => field.style.display = "none");
@@ -146,11 +148,17 @@
     const email = document.getElementById('email').value.trim();
     const pass = document.getElementById('password').value.trim();
     const err = document.getElementById('errorMsg');
-    if(!email || !pass){
+    if(!email){
       err.textContent = !email
         ? "Informe seu e-mail."
         : "Informe sua senha.";
       err.classList.add('show');
+      return;
+    }
+    if(!verificacao && !pass){
+      err.textContent = "Informe sua senha.";
+      err.classList.add("show");
+      document.getElementById("password").focus();
       return;
     }
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
@@ -214,7 +222,7 @@
           })
           : await api("/api/auth/login", { method:"POST", body:JSON.stringify({ email, senha:pass }) });
         if(data.requiresVerification){
-          showVerification(data.email);
+          showVerification(data.email, data.emailSent !== false, data.message);
           return;
         }
       }
