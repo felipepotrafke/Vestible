@@ -58,15 +58,12 @@ jobs:
 
       - name: Configure Azure Node.js runtime
         shell: bash
-        env:
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: |
           resource_group=$(az webapp list --query "[?name=='vestible'].resourceGroup | [0]" -o tsv)
           az webapp config appsettings set \
             --resource-group "$resource_group" \
             --name vestible \
-            --settings WEBSITE_NODE_DEFAULT_VERSION="~24" WEBSITES_PORT="3000" SCM_DO_BUILD_DURING_DEPLOYMENT="true" ENABLE_ORYX_BUILD="true" RESEND_API_KEY="$RESEND_API_KEY" EMAIL_FROM="$EMAIL_FROM"
+            --settings WEBSITE_NODE_DEFAULT_VERSION="~24" WEBSITES_PORT="3000" SCM_DO_BUILD_DURING_DEPLOYMENT="true" ENABLE_ORYX_BUILD="true"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3

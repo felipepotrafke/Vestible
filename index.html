@@ -59,17 +59,14 @@
   });
 
   let cadastro = false;
-  let verificacao = false;
-  let verificationEmail = "";
 
   function showLogin(){
     cadastro = false;
-    verificacao = false;
     document.querySelector(".login-form h1").textContent = "Bem-vindo de volta";
     document.querySelector(".login-form .lead").textContent = "Entre para continuar seus estudos";
     document.getElementById("registerNameField")?.remove();
+    document.getElementById("confirmEmailField")?.remove();
     document.getElementById("confirmField")?.remove();
-    document.getElementById("verificationField")?.remove();
     document.querySelectorAll(".field").forEach(field => field.style.display = "");
     document.getElementById("email").disabled = false;
     document.getElementById("password").disabled = false;
@@ -82,8 +79,6 @@
 
   function showRegister(){
     cadastro = true;
-    verificacao = false;
-    document.getElementById("verificationField")?.remove();
     document.querySelectorAll(".field").forEach(field => field.style.display = "");
     document.getElementById("email").disabled = false;
     document.getElementById("password").disabled = false;
@@ -95,6 +90,13 @@
       nameField.id = "registerNameField";
       nameField.innerHTML = `<label for="registerName">Nome</label><div class="input-wrap"><input id="registerName" autocomplete="name" placeholder="Seu nome"></div>`;
       document.querySelector(".field").before(nameField);
+    }
+    if(!document.getElementById("confirmEmailField")){
+      const confirmEmailField = document.createElement("div");
+      confirmEmailField.className = "field";
+      confirmEmailField.id = "confirmEmailField";
+      confirmEmailField.innerHTML = `<label for="confirmEmail">Confirmar e-mail</label><div class="input-wrap"><input type="email" id="confirmEmail" autocomplete="email" placeholder="Repita o e-mail"></div>`;
+      document.querySelector(".field").before(confirmEmailField);
     }
     if(!document.getElementById("confirmField")){
       const confirmField = document.createElement("div");
@@ -108,54 +110,18 @@
     document.getElementById("toLogin").addEventListener("click", showLogin);
   }
 
-  function showVerification(email, emailSent = true, message = ""){
-    verificacao = true;
-    cadastro = false;
-    verificationEmail = email;
-    document.querySelector(".login-form h1").textContent = "Confirme seu e-mail";
-    document.querySelector(".login-form .lead").textContent = emailSent
-      ? `Enviamos um código de 6 dígitos para ${email}`
-      : (message || `Não foi possível enviar o código para ${email}. Configure o e-mail no servidor ou reenvie.`);
-    document.getElementById("registerNameField")?.remove();
-    document.getElementById("confirmField")?.remove();
-    document.querySelectorAll(".field").forEach(field => field.style.display = "none");
-    if(!document.getElementById("verificationField")){
-      const field = document.createElement("div");
-      field.className = "field";
-      field.id = "verificationField";
-      field.innerHTML = `<label for="verificationCode">Código de verificação</label><div class="input-wrap"><input id="verificationCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></div>`;
-      document.querySelector(".btn-primary").before(field);
-    }
-    document.getElementById("verificationField").style.display = "";
-    document.querySelector(".btn-primary").textContent = "Verificar e entrar";
-    document.querySelector(".switch-line").innerHTML = `Não recebeu? <b id="resendCode">Reenviar código</b><br><b id="backToLogin">Voltar ao login</b>`;
-    document.getElementById("resendCode").addEventListener("click", async () => {
-      const err = document.getElementById("errorMsg");
-      try{
-        const data = await api("/api/auth/resend-verification", {method:"POST", body:JSON.stringify({email:verificationEmail})});
-        err.textContent = data.message || "Um novo código foi enviado.";
-        err.classList.add("show");
-      }catch(error){
-        err.textContent = error.message;
-        err.classList.add("show");
-      }
-    });
-    document.getElementById("backToLogin").addEventListener("click", showLogin);
-  }
-
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('email').value.trim();
     const pass = document.getElementById('password').value.trim();
     const err = document.getElementById('errorMsg');
     if(!email){
-      err.textContent = !email
-        ? "Informe seu e-mail."
-        : "Informe sua senha.";
+      err.textContent = "Informe seu e-mail.";
       err.classList.add('show');
+      document.getElementById("email").focus();
       return;
     }
-    if(!verificacao && !pass){
+    if(!pass){
       err.textContent = "Informe sua senha.";
       err.classList.add("show");
       document.getElementById("password").focus();
@@ -169,6 +135,7 @@
     }
     if(cadastro){
       const name = document.getElementById("registerName")?.value.trim();
+      const confirmEmail = document.getElementById("confirmEmail")?.value.trim();
       const confirmation = document.getElementById("confirmPassword")?.value;
       if(!name){
         err.textContent = "Informe seu nome.";
@@ -180,6 +147,18 @@
         err.textContent = "Informe um e-mail válido.";
         err.classList.add("show");
         document.getElementById("email").focus();
+        return;
+      }
+      if(!confirmEmail){
+        err.textContent = "Confirme seu e-mail digitando-o novamente.";
+        err.classList.add("show");
+        document.getElementById("confirmEmail")?.focus();
+        return;
+      }
+      if(email !== confirmEmail.toLowerCase()){
+        err.textContent = "A confirmação do e-mail não coincide.";
+        err.classList.add("show");
+        document.getElementById("confirmEmail")?.focus();
         return;
       }
       if(pass.length < 8){
@@ -198,49 +177,29 @@
     err.classList.remove('show');
     try {
       let data;
-      if(verificacao){
-        const code = document.getElementById("verificationCode").value.trim();
-        if(!/^\d{6}$/.test(code)){
-          err.textContent = "Informe o código de 6 dígitos.";
-          err.classList.add("show");
-          return;
-        }
-        data = await api("/api/auth/verify-email", {
+      data = cadastro
+        ? await api("/api/auth/register", {
           method:"POST",
-          body:JSON.stringify({email:verificationEmail, codigo:code})
-        });
-      }else{
-        data = cadastro
-          ? await api("/api/auth/register", {
-            method:"POST",
-            body:JSON.stringify({
-              nome: document.getElementById("registerName").value.trim(),
-              email,
-              senha: pass,
-              confirmacao: document.getElementById("confirmPassword").value
-            })
+          body:JSON.stringify({
+            nome: document.getElementById("registerName").value.trim(),
+            email,
+            confirmacao_email: document.getElementById("confirmEmail").value.trim(),
+            senha: pass,
+            confirmacao: document.getElementById("confirmPassword").value
           })
-          : await api("/api/auth/login", { method:"POST", body:JSON.stringify({ email, senha:pass }) });
-        if(data.requiresVerification){
-          showVerification(data.email, data.emailSent !== false, data.message);
-          return;
-        }
-      }
+        })
+        : await api("/api/auth/login", { method:"POST", body:JSON.stringify({ email, senha:pass }) });
       localStorage.setItem("vestible_token", data.token);
       localStorage.setItem("vestible_user", JSON.stringify(data.user));
       window.location.href = data.user.tipo === "admin" ? "admin.html" : "dashboard.html";
     } catch(error) {
-      if(error.requiresVerification && error.email){
-        showVerification(error.email);
-        return;
-      }
       err.textContent = error.message;
       err.classList.add("show");
       if(error.field === "nome") document.getElementById("registerName")?.focus();
       if(error.field === "email") document.getElementById("email")?.focus();
+      if(error.field === "confirmacao_email") document.getElementById("confirmEmail")?.focus();
       if(error.field === "senha") document.getElementById("password")?.focus();
       if(error.field === "confirmacao") document.getElementById("confirmPassword")?.focus();
-      if(error.field === "codigo") document.getElementById("verificationCode")?.focus();
     }
   });
 

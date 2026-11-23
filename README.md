@@ -39,7 +39,6 @@ Em vez de apenas empilhar milhares de questões, a plataforma acompanha o desemp
 - **Trilha de conteúdo** — página dedicada a estudo livre, com busca textual e filtros por disciplina/tema.
 - **Gamificação** — XP, níveis, streak de dias consecutivos e ranking geral entre os estudantes.
 - **Conta pessoal** — cadastro, login e recuperação de senha, com todo o histórico de desempenho salvo por usuário.
-- **Verificação de e-mail** — cadastro protegido por código de 6 dígitos válido por 15 minutos.
 
 ## Diferencial
 
@@ -56,25 +55,3 @@ Estudantes do ensino médio se preparando para vestibulares e o ENEM, que buscam
 Projeto em desenvolvimento ativo.
 
 </div>
-
-## Configuração de e-mail
-
-Para enviar os códigos de verificação por e-mail, configure estas variáveis de ambiente no servidor:
-
-```bash
-RESEND_API_KEY=re_xxxxx
-EMAIL_FROM="Vestible <contato@seudominio.com>"
-```
-
-Também é possível usar SMTP:
-
-```bash
-SMTP_HOST=smtp.exemplo.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=usuario
-SMTP_PASS=senha
-SMTP_FROM="Vestible <contato@exemplo.com>"
-```
-
-Sem essas configurações, o Vestible registra o código no console do servidor. Esse modo é destinado apenas ao desenvolvimento.

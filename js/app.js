@@ -135,7 +135,6 @@ async function api(path, options = {}){
     if(response.status >= 500) fallback = "O servidor encontrou um erro. Tente novamente em alguns instantes.";
     const error = new Error(String(data.error || data.message || fallback));
     error.status = response.status;
-    error.requiresVerification = Boolean(data.requiresVerification);
     error.email = data.email || null;
     error.field = data.field || null;
     throw error;

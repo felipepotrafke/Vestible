@@ -4,7 +4,6 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const nodemailer = require("nodemailer");
 const Database = require("better-sqlite3");
 const multer = require("multer");
 const http = require("http");
@@ -164,8 +163,8 @@ if (!usuarioColumnsWithAvatar.some((column) => column.name === "foto_avatar")) {
 const usuarioColumnsWithVerification = db.prepare("PRAGMA table_info(usuario)").all();
 if (!usuarioColumnsWithVerification.some((column) => column.name === "email_verificado")) {
   db.exec("ALTER TABLE usuario ADD COLUMN email_verificado INTEGER NOT NULL DEFAULT 0 CHECK (email_verificado IN (0,1))");
-  db.exec("UPDATE usuario SET email_verificado = 1");
 }
+db.exec("UPDATE usuario SET email_verificado = 1");
 if (!usuarioColumnsWithVerification.some((column) => column.name === "codigo_verificacao")) {
   db.exec("ALTER TABLE usuario ADD COLUMN codigo_verificacao TEXT");
 }
@@ -492,69 +491,16 @@ function setAuthCookie(res, token) {
   res.setHeader("Set-Cookie", `token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`);
 }
 
-function createVerificationCode() {
-  return String(crypto.randomInt(100000, 1000000));
-}
-
-async function sendVerificationEmail(user, code) {
-  const resendApiKey = process.env.RESEND_API_KEY;
-  if (resendApiKey) {
-    const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || "Vestible <onboarding@resend.dev>";
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from,
-        to: [user.email],
-        subject: "Confirme seu e-mail — Vestible",
-        text: `Olá, ${user.nome}!\n\nSeu código de verificação Vestible é: ${code}\n\nO código expira em 15 minutos.`,
-        html: `<div style="font-family:Arial,sans-serif;color:#182238"><h2>Confirme seu e-mail</h2><p>Use o código abaixo para concluir seu cadastro:</p><div style="font-size:32px;letter-spacing:8px;font-weight:bold;background:#f4efe2;padding:18px;border-radius:10px;width:max-content">${code}</div><p>O código expira em 15 minutos.</p></div>`
-      })
-    });
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Resend recusou o envio (${response.status})${detail ? `: ${detail.slice(0,200)}` : ""}`);
-    }
-    return true;
-  }
-  const smtpConfigured = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-  if (!smtpConfigured) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("Nenhum provedor de e-mail configurado.");
-    }
-    console.log(`[Vestible] Código de verificação para ${user.email}: ${code}`);
-    return false;
-  }
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM || `"Vestible" <${process.env.SMTP_USER}>`,
-    to: user.email,
-    subject: "Confirme seu e-mail — Vestible",
-    text: `Olá, ${user.nome}!\n\nSeu código de verificação Vestible é: ${code}\n\nO código expira em 15 minutos.`,
-    html: `<div style="font-family:Arial,sans-serif;color:#182238"><h2>Confirme seu e-mail</h2><p>Use o código abaixo para concluir seu cadastro:</p><div style="font-size:32px;letter-spacing:8px;font-weight:bold;background:#f4efe2;padding:18px;border-radius:10px;width:max-content">${code}</div><p>O código expira em 15 minutos.</p></div>`
-  });
-  return true;
-}
-
 app.post("/api/auth/register", async (req, res) => {
   const nome = String(req.body.nome || "").trim();
   const email = String(req.body.email || "").trim().toLowerCase();
+  const confirmacaoEmail = String(req.body.confirmacao_email || "").trim().toLowerCase();
   const senha = String(req.body.senha || "");
   const confirmacao = String(req.body.confirmacao || "");
   if (!nome) return res.status(400).json({ error: "Informe seu nome.", field: "nome" });
   if (!email) return res.status(400).json({ error: "Informe seu e-mail.", field: "email" });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Informe um e-mail válido.", field: "email" });
+  if (email !== confirmacaoEmail) return res.status(400).json({ error: "A confirmação do e-mail não coincide.", field: "confirmacao_email" });
   if (senha.length < 8) return res.status(400).json({ error: "A senha deve ter pelo menos 8 caracteres.", field: "senha" });
   if (senha !== confirmacao) return res.status(400).json({ error: "A confirmação da senha não coincide.", field: "confirmacao" });
   const reservation = db.prepare("SELECT disponivel_em FROM conta_exclusao WHERE email = ?").get(email);
@@ -571,131 +517,42 @@ app.post("/api/auth/register", async (req, res) => {
   }
   try {
     const register = db.transaction(() => {
-      const code = createVerificationCode();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      const sentAt = new Date().toISOString();
       const result = db.prepare(`
         INSERT INTO usuario
-        (nome, email, senha, tipo, email_verificado, codigo_verificacao, codigo_expira_em, codigo_enviado_em)
-        VALUES (?, ?, ?, 'aluno', 0, ?, ?, ?)
-      `).run(nome, email, bcrypt.hashSync(senha, 10), bcrypt.hashSync(code, 10), expiresAt, sentAt);
+        (nome, email, senha, tipo, email_verificado)
+        VALUES (?, ?, ?, 'aluno', 1)
+      `).run(nome, email, bcrypt.hashSync(senha, 10));
       db.prepare("INSERT INTO desempenho (id_usuario) VALUES (?)").run(result.lastInsertRowid);
-      return {
-        user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(result.lastInsertRowid),
-        code
-      };
+      return db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(result.lastInsertRowid);
     });
-    const { user, code } = register();
-    let emailSent = false;
-    let emailError = null;
-    try {
-      emailSent = await sendVerificationEmail(user, code);
-    } catch (error) {
-      emailError = error.message;
-      console.error("[Vestible] Falha ao enviar e-mail de verificação:", error.message);
-      db.prepare("DELETE FROM usuario WHERE id_usuario = ?").run(user.id_usuario);
-      return res.status(502).json({
-        error: "Não foi possível enviar o e-mail de verificação. Tente novamente em alguns minutos.",
-        emailConfigured: false
-      });
-    }
-    res.status(201).json({
-      requiresVerification: true,
-      email,
-      emailSent,
-      message: emailSent
-        ? "Cadastro criado. Enviamos um código de 6 dígitos para seu e-mail."
-        : "Cadastro criado, mas o e-mail ainda não pôde ser enviado. Configure o provedor de e-mail no servidor.",
-      emailError: process.env.NODE_ENV === "production" ? null : emailError
-    });
+    const user = register();
+    const token = signToken(user);
+    setAuthCookie(res, token);
+    res.status(201).json({ token, user: publicUser(user), message: "Conta criada com sucesso!" });
   } catch (error) {
     console.error("[Vestible] Falha no cadastro:", error);
     res.status(500).json({ error: "Não foi possível concluir o cadastro." });
   }
 });
 
-app.post("/api/auth/verify-email", (req, res) => {
-  const email = String(req.body.email || "").trim().toLowerCase();
-  const code = String(req.body.codigo || "").trim();
-  if (!email || !/^\d{6}$/.test(code)) {
-    return res.status(400).json({ error: "Informe o e-mail e o código de 6 dígitos.", field: "codigo" });
-  }
-  const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
-  if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
-  if (user.email_verificado) return res.status(409).json({ error: "Este e-mail já foi verificado." });
-  if (!user.codigo_verificacao || !user.codigo_expira_em) {
-    return res.status(400).json({ error: "Solicite um novo código de verificação." });
-  }
-  if (Date.parse(user.codigo_expira_em) <= Date.now()) {
-    return res.status(400).json({ error: "O código expirou. Solicite um novo código." });
-  }
-  if (!bcrypt.compareSync(code, user.codigo_verificacao)) {
-    return res.status(400).json({ error: "Código inválido." });
-  }
-  db.prepare(`
-    UPDATE usuario
-    SET email_verificado = 1, codigo_verificacao = NULL, codigo_expira_em = NULL, codigo_enviado_em = NULL
-    WHERE id_usuario = ?
-  `).run(user.id_usuario);
-  const verifiedUser = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(user.id_usuario);
-  const token = signToken(verifiedUser);
-  setAuthCookie(res, token);
-  res.json({ token, user: publicUser(verifiedUser), message: "E-mail verificado com sucesso!" });
-});
-
-app.post("/api/auth/resend-verification", async (req, res) => {
-  const email = String(req.body.email || "").trim().toLowerCase();
-  const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
-  if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
-  if (user.email_verificado) return res.status(409).json({ error: "Este e-mail já foi verificado." });
-  if (user.codigo_enviado_em && Date.now() - Date.parse(user.codigo_enviado_em) < 60 * 1000) {
-    return res.status(429).json({ error: "Aguarde 1 minuto antes de solicitar outro código." });
-  }
-  const code = createVerificationCode();
-  try {
-    const emailSent = await sendVerificationEmail(user, code);
-    if (!emailSent) {
-      return res.status(503).json({
-        error: "O provedor de e-mail não está configurado no servidor.",
-        emailConfigured: false
-      });
-    }
-  } catch (error) {
-    console.error("[Vestible] Falha ao reenviar e-mail de verificação:", error.message);
-    return res.status(502).json({
-      error: "Não foi possível enviar o e-mail agora. Tente novamente em alguns minutos.",
-      emailConfigured: true
-    });
-  }
-  db.prepare(`
-    UPDATE usuario
-    SET codigo_verificacao = ?, codigo_expira_em = ?, codigo_enviado_em = ?
-    WHERE id_usuario = ?
-  `).run(
-    bcrypt.hashSync(code, 10),
-    new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    new Date().toISOString(),
-    user.id_usuario
-  );
-  res.json({ ok: true, message: "Um novo código foi enviado para seu e-mail." });
-});
-
 app.post("/api/auth/login", (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const senha = String(req.body.senha || "");
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Informe um e-mail válido.", field: "email" });
+  }
+  if (!senha) {
+    return res.status(400).json({ error: "Informe sua senha.", field: "senha" });
+  }
   const user = db.prepare("SELECT * FROM usuario WHERE email = ?").get(email);
-  if (!user || !bcrypt.compareSync(senha, user.senha)) {
-    return res.status(401).json({ error: "E-mail ou senha inválidos.", field: "senha" });
+  if (!user) {
+    return res.status(401).json({ error: "Este e-mail não está cadastrado.", field: "email" });
+  }
+  if (!bcrypt.compareSync(senha, user.senha)) {
+    return res.status(401).json({ error: "Senha incorreta.", field: "senha" });
   }
   if (user.conta_excluida) {
     return res.status(403).json({ error: "Esta conta foi excluída." });
-  }
-  if (!user.email_verificado) {
-    return res.status(403).json({
-      error: "Confirme seu e-mail antes de entrar.",
-      requiresVerification: true,
-      email
-    });
   }
   resetUserDay(user);
   const freshUser = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(user.id_usuario);
@@ -1316,7 +1173,7 @@ io.use((socket, next) => {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(payload.id);
     if (!user) return next(new Error("Usuário inválido"));
-    if (user.conta_excluida || !user.email_verificado) {
+    if (user.conta_excluida) {
       return next(new Error("Conta não disponível"));
     }
     socket.duelUser = user;
