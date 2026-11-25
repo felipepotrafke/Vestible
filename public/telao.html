@@ -21,6 +21,11 @@ body{background:#0F1A30;color:#F4EFE2;min-height:100vh}
 .screen-vs{font-size:2.4rem;color:#CB9B3C}
 .screen-status{font-size:1.35rem;margin:24px 0;color:#E9C877}
 .screen-result{font-size:2.2rem;color:#F4EFE2;margin-top:20px}
+.screen-hp{max-width:320px;margin:18px auto 0;text-align:left;color:rgba(244,239,226,.8);font-size:.9rem}
+.screen-hp-label{display:flex;justify-content:space-between;margin-bottom:6px}
+.screen-hp-track{height:12px;background:rgba(255,255,255,.16);border-radius:20px;overflow:hidden}
+.screen-hp-fill{height:100%;background:linear-gradient(90deg,#5DBB78,#A9D875);border-radius:inherit;transition:width .45s ease}
+@media(max-width:700px){.screen-shell{padding:24px 12px}.screen-shell h1{font-size:2rem}.screen-scoreboard{grid-template-columns:1fr;gap:12px}.screen-player{padding:22px 14px}.screen-player strong{font-size:1.5rem}.screen-player .screen-score{font-size:4rem}.screen-player .screen-meta{font-size:.9rem}.screen-vs{font-size:1.5rem}.screen-status{font-size:1.1rem}.screen-result{font-size:1.5rem}.code-box input{font-size:1rem;padding:14px 10px}}
 </style>
 </head>
 <body>
@@ -36,6 +41,7 @@ body{background:#0F1A30;color:#F4EFE2;min-height:100vh}
 <script>
 const socket = io();
 const codeInput = document.getElementById("roomCode");
+let activeMode = "conhecimento";
 
 function formatTime(seconds){
   const value = Math.max(0, Number(seconds) || 0);
@@ -45,12 +51,17 @@ function formatTime(seconds){
 function render(data){
   const [a,b] = data.players || [];
   const result = data.result;
+  activeMode = data.mode;
+  const playerMarkup = player => `
+    <div class="screen-player"><strong>${escapeHtml(player?.nome || "Jogador")}</strong><div class="screen-score">${player?.acertos || 0}</div><div class="screen-meta">${player?.respostas || 0} respostas · ${(player?.tempo_total || 0).toFixed(1)} s</div>
+    ${data.mode === "blitz" ? `<div class="screen-hp"><div class="screen-hp-label"><span>Vida</span><strong>${player?.hp ?? 100} HP</strong></div><div class="screen-hp-track" role="progressbar" aria-label="Vida de ${escapeHtml(player?.nome || "jogador")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${player?.hp ?? 100}"><div class="screen-hp-fill" style="width:${player?.hp ?? 100}%"></div></div></div>` : ""}
+    </div>`;
   document.getElementById("screenContent").innerHTML = `
-    <div class="screen-status">${data.status === "Finalizado" ? "Duelo finalizado" : (data.mode === "blitz" ? `Blitz — ${formatTime(data.remaining)}` : "Modo Conhecimento")}</div>
+    <div class="screen-status">${data.status === "Finalizado" ? "Duelo finalizado" : `${data.mode === "blitz" ? "Blitz" : "Conhecimento"} — ${formatTime(data.remaining)}`}</div>
     <div class="screen-scoreboard">
-      <div class="screen-player"><strong>${escapeHtml(a?.nome || "Jogador 1")}</strong><div class="screen-score">${a?.acertos || 0}</div><div class="screen-meta">${a?.respostas || 0} respostas · ${(a?.tempo_total || 0).toFixed(1)} s</div></div>
+      ${playerMarkup(a)}
       <div class="screen-vs">VS</div>
-      <div class="screen-player"><strong>${escapeHtml(b?.nome || "Jogador 2")}</strong><div class="screen-score">${b?.acertos || 0}</div><div class="screen-meta">${b?.respostas || 0} respostas · ${(b?.tempo_total || 0).toFixed(1)} s</div></div>
+      ${playerMarkup(b)}
     </div>
     ${result ? `<div class="screen-result">${result.empate ? "Empate!" : (result.winnerId ? `Vencedor: ${escapeHtml((data.players.find(p=>p.id_usuario===result.winnerId)?.nome || "Jogador"))}` : "Resultado final")}</div>` : ""}
   `;
@@ -68,7 +79,7 @@ socket.on("duelo_estado", render);
 socket.on("duelo_tempo", ({remaining}) => {
   const status = document.querySelector(".screen-status");
   if(status && !status.textContent.includes("finalizado")) {
-    status.textContent = `Blitz — ${formatTime(remaining)}`;
+    status.textContent = `${activeMode === "blitz" ? "Blitz" : "Conhecimento"} — ${formatTime(remaining)}`;
   }
 });
 socket.on("telao_erro", message => {

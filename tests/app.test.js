@@ -79,6 +79,13 @@ test("layout móvel inclui batalha, perfil, avatar e saída da conta", () => {
   assert.match(app, /nav\.querySelector\('a\[href="amizades\.html"\]'\)/);
   assert.match(css, /@media \(max-width:820px\)/);
   assert.match(css, /\.bottom-nav/);
+  assert.match(css, /\.duel-scoreboard/);
+  assert.match(css, /\.hp-track/);
+  assert.match(css, /\.hp-hit/);
+  const duel = fs.readFileSync(path.resolve(__dirname, "../public/js/duel.js"), "utf8");
+  assert.match(duel, /duelo_pular/);
+  assert.match(duel, /data-hp-player/);
+  assert.match(css, /@media \(max-width:560px\)/);
   assert.match(css, /a\[href="dashboard\.html"\]/);
   assert.match(css, /a\[href="perfil\.html"\]/);
   assert.match(login, /class="toggle-eye"/);
@@ -294,8 +301,10 @@ test("sala privada aceita convite de amigo e inicia a batalha pelo código", asy
 
   try {
     const created = new Promise(resolve => sockets[0].once("duelo_sala_criada", resolve));
-    sockets[0].emit("duelo_criar_sala", { mode: "conhecimento" });
+    sockets[0].emit("duelo_criar_sala", { mode: "conhecimento", questionCount: "99" });
     const room = await created;
+    assert.equal(room.questionCount, 30);
+    assert.equal(room.duration, 90 * 60);
     const invitation = new Promise(resolve => sockets[1].once("duelo_convite", resolve));
     sockets[0].emit("duelo_convidar", {
       code: room.code,
@@ -309,10 +318,12 @@ test("sala privada aceita convite de amigo e inicia a batalha pelo código", asy
     assert.equal(matches[0].code, room.code);
     assert.equal(matches[1].code, room.code);
     assert.equal(matches[0].players.length, 2);
+    assert.equal(matches[0].questions.length, 30);
+    assert.equal(matches[0].duration, 90 * 60);
 
     const outcomes = sockets.map(socket => new Promise(resolve => socket.once("duelo_resultado", resolve)));
     sockets.forEach(socket => {
-      for (let questionIndex = 0; questionIndex < 10; questionIndex++) {
+      for (let questionIndex = 0; questionIndex < matches[0].questions.length; questionIndex++) {
         socket.emit("duelo_responder", {
           code: room.code,
           questionIndex,
@@ -321,12 +332,25 @@ test("sala privada aceita convite de amigo e inicia a batalha pelo código", asy
       }
     });
     await Promise.all(outcomes);
+    const blitzRoomCreated = new Promise(resolve => sockets[0].once("duelo_sala_criada", resolve));
+    sockets[0].emit("duelo_criar_sala", { mode: "blitz", duration: "99" });
+    const blitzRoom = await blitzRoomCreated;
+    assert.equal(blitzRoom.duration, 10 * 60);
+    assert.equal(blitzRoom.questionCount, 80);
   } finally {
     sockets.forEach(socket => socket.disconnect());
   }
 });
 
-test("duelo Blitz encerra ao responder todas as questões e para o timer", async () => {
+test("duelo Blitz aplica dano, erro, cura por combo, sequência de pulos e nocaute", async () => {
+  const adminLogin = await request(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    body: JSON.stringify({ email: "admin@vestible.com", senha: "Admin@123" })
+  });
+  const questionData = await request(`${baseUrl}/api/admin/questoes`, {
+    headers: { Authorization: `Bearer ${adminLogin.body.token}` }
+  });
+  const answerById = new Map(questionData.body.map(question => [question.id_questao, question.resposta_correta]));
   const players = [];
   for (let i = 1; i <= 2; i++) {
     const email = `duelista${i}@example.com`;
@@ -352,41 +376,91 @@ test("duelo Blitz encerra ao responder todas as questões e para o timer", async
     })
   );
 
-  await Promise.all(sockets.map((socket) => new Promise((resolve, reject) => {
-    socket.once("connect", resolve);
-    socket.once("connect_error", reject);
-  })));
+  try {
+    await Promise.all(sockets.map((socket) => new Promise((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("connect_error", reject);
+    })));
 
-  const starts = sockets.map((socket) => new Promise((resolve) => socket.once("duelo_inicio", resolve)));
-  sockets.forEach((socket) => socket.emit("duelo_buscar", { mode: "blitz", duration: "1" }));
-  const matches = await Promise.all(starts);
-  assert.equal(matches[0].code, matches[1].code);
-  assert.equal(matches[0].questions.length, 10);
+    const waitFor = (socket, event) => new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error(`Tempo esgotado aguardando ${event}.`)), 5000);
+      socket.once(event, value => {
+        clearTimeout(timeout);
+        resolve(value);
+      });
+    });
+    const waitForResponses = (socket, userId, count) => new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        socket.off("duelo_estado", onState);
+        reject(new Error(`Tempo esgotado aguardando ${count} respostas no estado do duelo.`));
+      }, 5000);
+      const onState = state => {
+        const player = state.players.find(entry => entry.id_usuario === userId);
+        if (player?.respostas < count) return;
+        clearTimeout(timeout);
+        socket.off("duelo_estado", onState);
+        resolve(state);
+      };
+      socket.on("duelo_estado", onState);
+    });
+    const starts = sockets.map((socket) => waitFor(socket, "duelo_inicio"));
+    sockets.forEach((socket) => socket.emit("duelo_buscar", { mode: "blitz", duration: "1" }));
+    const matches = await Promise.all(starts);
+    assert.equal(matches[0].code, matches[1].code);
+    assert.equal(matches[0].questions.length, 10);
+    assert.equal(matches[0].duration, 60);
 
-  const results = sockets.map((socket) => new Promise((resolve) => socket.once("duelo_resultado", resolve)));
-  sockets.forEach((socket) => {
-    for (let questionIndex = 0; questionIndex < 10; questionIndex++) {
-      socket.emit("duelo_responder", {
+    const answer = (playerIndex, questionIndex, correct) => {
+      const question = matches[playerIndex].questions[questionIndex];
+      const rightAnswer = answerById.get(question.id_questao);
+      return correct ? rightAnswer : (rightAnswer === "A" ? "B" : "A");
+    };
+    const submitAnswer = async (playerIndex, questionIndex, correct) => {
+      const response = waitFor(sockets[playerIndex], "duelo_resposta");
+      const stateUpdate = waitForResponses(sockets[playerIndex], players[playerIndex].user.id_usuario, questionIndex + 1);
+      sockets[playerIndex].emit("duelo_responder", {
         code: matches[0].code,
         questionIndex,
-        alternativa: "A"
+        alternativa: answer(playerIndex, questionIndex, correct)
       });
+      return Promise.all([response, stateUpdate]);
+    };
+    const skipQuestion = async (playerIndex, questionIndex) => {
+      const response = waitFor(sockets[playerIndex], "duelo_resposta");
+      const stateUpdate = waitForResponses(sockets[playerIndex], players[playerIndex].user.id_usuario, questionIndex + 1);
+      sockets[playerIndex].emit("duelo_pular", { code: matches[0].code, questionIndex });
+      return Promise.all([response, stateUpdate]);
+    };
+
+    const [wrongAnswer, wrongState] = await submitAnswer(0, 0, false);
+    assert.equal(wrongAnswer.correta, false);
+    assert.equal(wrongState.players.find(player => player.id_usuario === players[0].user.id_usuario).hp, 90);
+
+    for (let index = 0; index < 3; index++) {
+      const [skipped, stateUpdate] = await skipQuestion(1, index);
+      assert.equal(skipped.skipped, true);
+      const health = stateUpdate.players.find(player => player.id_usuario === players[1].user.id_usuario).hp;
+      assert.equal(health, [95, 90, 80][index]);
     }
-  });
 
-  const outcomes = await Promise.all(results.map((promise) =>
-    Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Duelo não terminou após 10 respostas.")), 5000))
-    ])
-  ));
-  assert.equal(outcomes[0].code, matches[0].code);
-  assert.equal(outcomes[1].code, matches[1].code);
-
-  let timerEventsAfterFinish = 0;
-  sockets.forEach((socket) => socket.on("duelo_tempo", () => { timerEventsAfterFinish += 1; }));
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-  assert.equal(timerEventsAfterFinish, 0);
-
-  sockets.forEach((socket) => socket.disconnect());
+    const results = sockets.map(socket => waitFor(socket, "duelo_resultado"));
+    let comboState;
+    for (let index = 1; index <= 5; index++) {
+      const [, stateUpdate] = await submitAnswer(0, index, true);
+      if (index === 5) {
+        comboState = stateUpdate;
+      }
+    }
+    assert.equal(comboState.players.find(player => player.id_usuario === players[0].user.id_usuario).hp, 98);
+    assert.equal(comboState.players.find(player => player.id_usuario === players[1].user.id_usuario).hp, 0);
+    const outcomes = await Promise.all(results);
+    assert.equal(outcomes[0].reason, "knockout");
+    assert.equal(outcomes[0].winnerId, players[0].user.id_usuario);
+    let timerEventsAfterFinish = 0;
+    sockets.forEach(socket => socket.on("duelo_tempo", () => { timerEventsAfterFinish += 1; }));
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    assert.equal(timerEventsAfterFinish, 0);
+  } finally {
+    sockets.forEach((socket) => socket.disconnect());
+  }
 });

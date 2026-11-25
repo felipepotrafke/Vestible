@@ -1237,12 +1237,12 @@ function createRoomCode() {
   return code;
 }
 
-function getQuestionsForDuel() {
+function getQuestionsForDuel(questionCount) {
   return db.prepare(`
     SELECT id_questao, enunciado, alternativa_a, alternativa_b, alternativa_c,
            alternativa_d, alternativa_e, resposta_correta, disciplina, tema, dificuldade, imagem_url
-    FROM questao ORDER BY RANDOM() LIMIT 10
-  `).all().map((q) => ({
+    FROM questao ORDER BY RANDOM() LIMIT ?
+  `).all(questionCount).map((q) => ({
     id_questao: q.id_questao,
     enunciado: q.enunciado,
     alternativa_a: q.alternativa_a,
@@ -1267,7 +1267,28 @@ function playerPayload(player) {
     foto_avatar: player.user.foto_avatar || null,
     respostas: player.respostas,
     acertos: player.acertos,
-    tempo_total: Number(player.tempo_total.toFixed(2))
+    tempo_total: Number(player.tempo_total.toFixed(2)),
+    hp: player.hp,
+    resposta_streak: player.resposta_streak,
+    pulo_streak: player.pulo_streak
+  };
+}
+
+function getDuelSettings(mode, duration, questionCount) {
+  const normalizedMode = mode === "blitz" ? "blitz" : "conhecimento";
+  if (normalizedMode === "blitz") {
+    const minutes = Math.min(10, Math.max(1, Number.parseInt(duration, 10) || 1));
+    return {
+      mode: normalizedMode,
+      duration: minutes * 60,
+      questionCount: Math.max(10, minutes * 8)
+    };
+  }
+  const questions = Math.min(30, Math.max(1, Number.parseInt(questionCount, 10) || 10));
+  return {
+    mode: normalizedMode,
+    duration: questions * 3 * 60,
+    questionCount: questions
   };
 }
 
@@ -1277,7 +1298,7 @@ function getScreenState(match) {
     mode: match.mode,
     duration: match.duration,
     status: match.finished ? "Finalizado" : "Em andamento",
-    remaining: match.mode === "blitz"
+    remaining: match.duration
       ? Math.max(0, match.duration - Math.floor((Date.now() - match.startedAt) / 1000))
       : null,
     players: match.players.map(playerPayload),
@@ -1307,8 +1328,10 @@ function finishDuel(match, reason = "concluido", disconnectUserId = null) {
     const disconnected = match.players.find((player) => player.user.id_usuario === disconnectUserId);
     const remaining = match.players.find((player) => player.user.id_usuario !== disconnectUserId);
     if (remaining) winnerId = remaining.user.id_usuario;
-  } else if (reason === "blitz" || reason === "concluido") {
-    if (playerA.acertos !== playerB.acertos) {
+  } else if (reason === "blitz" || reason === "knowledge_timeout" || reason === "concluido" || reason === "knockout") {
+    if (match.mode === "blitz" && playerA.hp !== playerB.hp) {
+      winnerId = playerA.hp > playerB.hp ? playerA.user.id_usuario : playerB.user.id_usuario;
+    } else if (playerA.acertos !== playerB.acertos) {
       winnerId = playerA.acertos > playerB.acertos ? playerA.user.id_usuario : playerB.user.id_usuario;
     } else if (match.mode === "conhecimento") {
       if (playerA.tempo_total !== playerB.tempo_total) {
@@ -1407,13 +1430,16 @@ function startDuel(match) {
   match.startedAt = Date.now();
   match.finished = false;
   match.disconnectTimers = new Map();
-  match.questions = getQuestionsForDuel();
+  match.questions = getQuestionsForDuel(match.questionCount);
   match.players.forEach((player) => {
     player.respostas = 0;
     player.acertos = 0;
     player.tempo_total = 0;
     player.ultimo_resposta = null;
     player.respondidas = new Set();
+    player.hp = 100;
+    player.resposta_streak = 0;
+    player.pulo_streak = 0;
   });
   activeDuels.set(match.code, match);
 
@@ -1425,21 +1451,20 @@ function startDuel(match) {
     code: match.code,
     mode: match.mode,
     duration: match.duration,
+    questionCount: match.questions.length,
     players: match.players.map(playerPayload),
     questions: match.questions.map(({ resposta_correta, ...question }) => question),
     startedAt: match.startedAt
   });
   emitMatchState(match);
 
-  if (match.mode === "blitz") {
-    match.timer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - match.startedAt) / 1000);
-      const remaining = Math.max(0, match.duration - elapsed);
-      io.to(match.code).emit("duelo_tempo", { remaining });
-      io.to(`screen:${match.code}`).emit("duelo_tempo", { remaining });
-      if (remaining <= 0) finishDuel(match, "blitz");
-    }, 1000);
-  }
+  match.timer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - match.startedAt) / 1000);
+    const remaining = Math.max(0, match.duration - elapsed);
+    io.to(match.code).emit("duelo_tempo", { remaining });
+    io.to(`screen:${match.code}`).emit("duelo_tempo", { remaining });
+    if (remaining <= 0) finishDuel(match, match.mode === "blitz" ? "blitz" : "knowledge_timeout");
+  }, 1000);
 }
 
 io.use((socket, next) => {
@@ -1493,6 +1518,7 @@ io.on("connection", (socket) => {
             code: match.code,
             mode: match.mode,
             duration: match.duration,
+            questionCount: match.questions.length,
             questionIndex: player.respondidas.size,
             players: match.players.map(playerPayload),
             questions: match.questions.map(({ resposta_correta, ...question }) => question),
@@ -1511,7 +1537,7 @@ io.on("connection", (socket) => {
     socket.emit("duelo_estado", getScreenState(match));
   });
 
-  socket.on("duelo_buscar", ({ mode, duration } = {}) => {
+  socket.on("duelo_buscar", ({ mode, duration, questionCount } = {}) => {
     if (!socket.duelUser) return socket.emit("duelo_erro", "Autenticação obrigatória.");
     for (const queue of duelQueues.values()) {
       for (let i = queue.length - 1; i >= 0; i--) {
@@ -1520,11 +1546,9 @@ io.on("connection", (socket) => {
         }
       }
     }
-    const normalizedMode = mode === "blitz" ? "blitz" : "conhecimento";
-    const normalizedDuration = normalizedMode === "blitz"
-      ? Math.min(5, Math.max(1, Number(duration) || 1)) * 60
-      : null;
-    const queueKey = `${normalizedMode}:${normalizedDuration || "knowledge"}`;
+    const settings = getDuelSettings(mode, duration, questionCount);
+    const { mode: normalizedMode, duration: normalizedDuration } = settings;
+    const queueKey = `${normalizedMode}:${normalizedDuration}:${settings.questionCount}`;
     if (!duelQueues.has(queueKey)) duelQueues.set(queueKey, []);
     const queue = duelQueues.get(queueKey);
 
@@ -1548,6 +1572,7 @@ io.on("connection", (socket) => {
         code,
         mode: normalizedMode,
         duration: normalizedDuration,
+        questionCount: settings.questionCount,
         players: [
           { socketId: first.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(first.userId), respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() },
           { socketId: second.socketId, user: db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(second.userId), respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() }
@@ -1560,21 +1585,20 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("duelo_criar_sala", ({ mode, duration } = {}) => {
+  socket.on("duelo_criar_sala", ({ mode, duration, questionCount } = {}) => {
     if (!socket.duelUser) return socket.emit("duelo_erro", "Autenticação obrigatória.");
-    const normalizedMode = mode === "blitz" ? "blitz" : "conhecimento";
-    const normalizedDuration = normalizedMode === "blitz"
-      ? Math.min(5, Math.max(1, Number(duration) || 1)) * 60
-      : null;
+    const settings = getDuelSettings(mode, duration, questionCount);
+    const { mode: normalizedMode, duration: normalizedDuration } = settings;
     const code = createRoomCode();
     pendingRooms.set(code, {
       code,
       mode: normalizedMode,
       duration: normalizedDuration,
+      questionCount: settings.questionCount,
       hostSocketId: socket.id,
       hostUserId: socket.duelUser.id_usuario
     });
-    socket.emit("duelo_sala_criada", { code, mode: normalizedMode, duration: normalizedDuration });
+    socket.emit("duelo_sala_criada", { code, mode: normalizedMode, duration: normalizedDuration, questionCount: settings.questionCount });
   });
 
   socket.on("duelo_entrar_sala", ({ code } = {}) => {
@@ -1595,6 +1619,7 @@ io.on("connection", (socket) => {
       code: normalizedCode,
       mode: room.mode,
       duration: room.duration,
+      questionCount: room.questionCount,
       players: [
         { socketId: room.hostSocketId, user: host, respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() },
         { socketId: socket.id, user: socket.duelUser, respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() }
@@ -1659,9 +1684,8 @@ io.on("connection", (socket) => {
     const normalizedCode = String(code || "").toUpperCase();
     const match = activeDuels.get(normalizedCode);
     if (!match || match.finished) return;
-    if (match.mode === "blitz" &&
-        Date.now() - match.startedAt >= match.duration * 1000) {
-      finishDuel(match, "blitz");
+    if (Date.now() - match.startedAt >= match.duration * 1000) {
+      finishDuel(match, match.mode === "blitz" ? "blitz" : "knowledge_timeout");
       return;
     }
     const player = match.players.find((entry) =>
@@ -1670,7 +1694,7 @@ io.on("connection", (socket) => {
     );
     if (!player) return;
     const index = Number(questionIndex);
-    if (!Number.isInteger(index) || index < 0 || index >= match.questions.length) return;
+    if (!Number.isInteger(index) || index !== player.respondidas.size || index >= match.questions.length) return;
     if (player.respondidas.has(index)) return;
     const question = match.questions[index];
     const normalizedAnswer = String(alternativa || "").trim().toUpperCase();
@@ -1685,14 +1709,91 @@ io.on("connection", (socket) => {
     player.respostas += 1;
     player.tempo_total += elapsed;
     if (correta) player.acertos += 1;
+    let impact = null;
+    if (match.mode === "blitz") {
+      player.pulo_streak = 0;
+      if (correta) {
+        player.resposta_streak += 1;
+        const target = match.players.find((entry) => entry !== player);
+        const combo = player.resposta_streak % 5 === 0;
+        const damage = combo ? 28 : 14;
+        const healing = combo ? 8 : 0;
+        target.hp = Math.max(0, target.hp - damage);
+        player.hp = Math.min(100, player.hp + healing);
+        impact = { actorId: player.user.id_usuario, targetId: target.user.id_usuario, damage, healing, combo, action: "correct" };
+      } else {
+        player.resposta_streak = 0;
+        player.hp = Math.max(0, player.hp - 10);
+        impact = { actorId: player.user.id_usuario, targetId: player.user.id_usuario, damage: 10, healing: 0, combo: false, action: "wrong" };
+      }
+    }
 
     socket.emit("duelo_resposta", {
       questionIndex: index,
       correta,
-      resposta_correta: question.resposta_correta
+      resposta_correta: question.resposta_correta,
+      skipped: false
     });
     emitMatchState(match);
+    if (impact) io.to(match.code).emit("duelo_impacto", impact);
+    if (match.mode === "blitz" && (player.hp <= 0 || match.players.some((entry) => entry.hp <= 0))) {
+      finishDuel(match, "knockout");
+      return;
+    }
 
+    if (match.players.every((entry) => entry.respostas >= match.questions.length)) {
+      finishDuel(match, "concluido");
+    }
+  });
+
+  socket.on("duelo_pular", ({ code, questionIndex } = {}) => {
+    const normalizedCode = String(code || "").toUpperCase();
+    const match = activeDuels.get(normalizedCode);
+    if (!match || match.finished || match.mode !== "blitz") return;
+    if (Date.now() - match.startedAt >= match.duration * 1000) {
+      finishDuel(match, "blitz");
+      return;
+    }
+    const player = match.players.find((entry) =>
+      entry.socketId === socket.id ||
+      entry.user.id_usuario === socket.duelUser?.id_usuario
+    );
+    if (!player) return;
+    const index = Number(questionIndex);
+    if (!Number.isInteger(index) || index !== player.respondidas.size || index >= match.questions.length) return;
+
+    const now = Date.now();
+    const elapsed = player.ultimo_resposta
+      ? (now - player.ultimo_resposta) / 1000
+      : (now - match.startedAt) / 1000;
+    player.ultimo_resposta = now;
+    player.respondidas.add(index);
+    player.respostas += 1;
+    player.tempo_total += elapsed;
+    player.resposta_streak = 0;
+    player.pulo_streak += 1;
+    const damage = player.pulo_streak % 3 === 0 ? 10 : 5;
+    player.hp = Math.max(0, player.hp - damage);
+
+    socket.emit("duelo_resposta", {
+      questionIndex: index,
+      correta: false,
+      resposta_correta: match.questions[index].resposta_correta,
+      skipped: true
+    });
+    emitMatchState(match);
+    io.to(match.code).emit("duelo_impacto", {
+      actorId: player.user.id_usuario,
+      targetId: player.user.id_usuario,
+      damage,
+      healing: 0,
+      combo: false,
+      action: "skip"
+    });
+    if (player.hp <= 0) {
+      finishDuel(match, "knockout");
+      return;
+    }
     if (match.players.every((entry) => entry.respostas >= match.questions.length)) {
       finishDuel(match, "concluido");
     }
