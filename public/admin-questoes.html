@@ -45,6 +45,13 @@
     <section class="card on-paper admin-list-card"><div class="card-head"><h2>Questões cadastradas</h2><span class="small-caps" id="questionCount"></span></div><div id="questionsList"></div></section>
   </main>
 </div>
+<nav class="bottom-nav" data-admin-nav>
+  <ul>
+    <li><a href="admin.html">${ICON.shield}<span>Painel</span></a></li>
+    <li><a href="admin-questoes.html" class="active">${ICON.book}<span>Questões</span></a></li>
+    <li><a href="admin-conteudos.html">${ICON.video}<span>Conteúdos</span></a></li>
+  </ul>
+</nav>
 <script src="js/app.js?v=20261123d"></script>
 <script>
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
@@ -54,6 +61,7 @@
   async function loadAdmin(){
     const [me, questionData, materialData] = await Promise.all([api("/api/me"), api("/api/admin/questoes"), api("/api/admin/materiais")]);
     if(me.user.tipo !== "admin"){ window.location.href = "dashboard.html"; return; }
+    applyProfileVisuals(me.user);
     questions = questionData; materials = materialData;
     document.getElementById("questionMaterial").innerHTML = `<option value="">Sem material</option>` + materials.map(m => `<option value="${m.id_material}">${escapeHtml(m.titulo)}</option>`).join("");
     document.getElementById("questionCount").textContent = `${questions.length} cadastrada(s)`;

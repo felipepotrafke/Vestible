@@ -8,6 +8,7 @@ let socket = null;
 let match = null;
 let questionIndex = 0;
 let answered = false;
+let friendList = [];
 
 function initials(name) {
   return String(name || "").split(" ").filter(Boolean).map(word => word[0]).slice(0, 2).join("").toUpperCase();
@@ -48,7 +49,16 @@ function renderIntro() {
         </select>
       </div>
     </div>
-    <button class="btn btn-gold btn-block" id="queueBtn" style="padding:16px;font-size:1rem;">Buscar oponente</button>`;
+    <button class="btn btn-gold btn-block" id="queueBtn" style="padding:16px;font-size:1rem;">Pareamento aleatório ranqueado</button>
+    <div class="duel-intro-card" style="margin-top:16px">
+      <h3>Sala privada</h3>
+      <p class="subtitle" style="margin:6px 0 14px">Crie uma sala para convidar um amigo online ou compartilhe o código.</p>
+      <button class="btn btn-primary btn-block" id="createRoomBtn" type="button">Criar sala privada</button>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <input id="roomCodeInput" aria-label="Código da sala" placeholder="Código da sala" maxlength="6" autocomplete="off" style="flex:1;min-width:0;padding:12px;border:1px solid var(--line);border-radius:8px;text-transform:uppercase">
+        <button class="btn btn-outline" id="joinRoomBtn" type="button">Entrar</button>
+      </div>
+    </div>`;
 
   document.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
     document.querySelectorAll("[data-mode]").forEach(item => item.classList.remove("active"));
@@ -60,6 +70,59 @@ function renderIntro() {
     const duration = document.getElementById("durationSelect").value;
     socket.emit("duelo_buscar", { mode, duration });
     renderQueue();
+  });
+  document.getElementById("createRoomBtn").addEventListener("click", () => {
+    const mode = document.querySelector("[data-mode].active").dataset.mode;
+    const duration = document.getElementById("durationSelect").value;
+    socket.emit("duelo_criar_sala", { mode, duration });
+    stage.innerHTML = `<div class="matchmaking-card">Criando sua sala privada…</div>`;
+  });
+  document.getElementById("joinRoomBtn").addEventListener("click", () => {
+    const code = document.getElementById("roomCodeInput").value.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6}$/.test(code)) {
+      showToast("Informe um código de sala válido com 6 caracteres.");
+      return;
+    }
+    socket.emit("duelo_entrar_sala", { code });
+  });
+}
+
+function renderPrivateRoom(room) {
+  stage.innerHTML = `
+    <div class="duel-intro-card">
+      <h3>Sala privada criada</h3>
+      <p class="subtitle" style="margin:8px 0 16px">Compartilhe o código ou convide um amigo que esteja online.</p>
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap">
+        <strong style="font-size:2rem;letter-spacing:.18em">${escapeHtml(room.code)}</strong>
+        <button class="btn btn-outline" id="copyRoomCode" type="button">Copiar código</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:20px">
+        <select id="inviteFriendSelect" aria-label="Escolha um amigo para convidar" style="flex:1;min-width:0;padding:12px;border:1px solid var(--line);border-radius:8px">
+          <option value="">Escolha um amigo</option>
+          ${friendList.map(friend => `<option value="${friend.id_usuario}">${escapeHtml(friend.nome)}</option>`).join("")}
+        </select>
+        <button class="btn btn-primary" id="inviteFriendBtn" type="button" ${friendList.length ? "" : "disabled"}>Convidar</button>
+      </div>
+      ${friendList.length ? "" : `<p class="subtitle" style="margin-top:10px">Adicione amigos para enviar convites diretos.</p>`}
+      <p class="subtitle" style="margin-top:16px">Aguardando outro jogador entrar…</p>
+    </div>
+    <button class="btn btn-outline btn-block" id="cancelPrivateRoom" type="button">Cancelar sala</button>`;
+  document.getElementById("copyRoomCode").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(room.code);
+      showToast("Código copiado.");
+    } catch (error) {
+      showToast("Não foi possível copiar. Selecione e copie o código manualmente.");
+    }
+  });
+  document.getElementById("inviteFriendBtn").addEventListener("click", () => {
+    const userId = Number(document.getElementById("inviteFriendSelect").value);
+    if (!userId) return showToast("Escolha um amigo para convidar.");
+    socket.emit("duelo_convidar", { code: room.code, userId });
+  });
+  document.getElementById("cancelPrivateRoom").addEventListener("click", () => {
+    socket.emit("duelo_cancelar_sala", { code: room.code });
+    renderIntro();
   });
 }
 
@@ -200,7 +263,16 @@ api("/api/me").then(data => {
 
   socket = io({ auth: { token: localStorage.getItem("vestible_token") } });
   socket.on("connect_error", error => showToast(error.message));
+  socket.on("duelo_erro", message => showToast(message));
   socket.on("duelo_aguardando", renderQueue);
+  socket.on("duelo_sala_criada", renderPrivateRoom);
+  socket.on("duelo_convite_enviado", ({ nome }) => showToast(`Convite enviado para ${nome}.`));
+  socket.on("duelo_convite", invitation => {
+    const mode = invitation.mode === "blitz" ? "Blitz" : "Conhecimento";
+    if (window.confirm(`${invitation.host.nome} convidou você para uma batalha (${mode}). Entrar na sala ${invitation.code}?`)) {
+      socket.emit("duelo_entrar_sala", { code: invitation.code });
+    }
+  });
   socket.on("duelo_inicio", renderMatch);
   socket.on("duelo_reconectado", (data) => {
     const code = data.code;
@@ -228,5 +300,6 @@ api("/api/me").then(data => {
     }, 650);
   });
   socket.on("duelo_resultado", renderResult);
+  api("/api/amigos").then(data => { friendList = data.friends; }).catch(error => showToast(error.message));
   renderIntro();
 }).catch(() => { window.location.href = "index.html"; });

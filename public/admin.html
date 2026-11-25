@@ -45,6 +45,13 @@
     </section>
   </main>
 </div>
+<nav class="bottom-nav" data-admin-nav>
+  <ul>
+    <li><a href="admin.html" class="active">${ICON.shield}<span>Painel</span></a></li>
+    <li><a href="admin-questoes.html">${ICON.book}<span>Questões</span></a></li>
+    <li><a href="admin-conteudos.html">${ICON.video}<span>Conteúdos</span></a></li>
+  </ul>
+</nav>
 <script src="js/app.js?v=20261123d"></script>
 <script>
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
@@ -52,6 +59,7 @@
   async function loadAdmin(){
     const [me, users] = await Promise.all([api("/api/me"), api("/api/admin/usuarios")]);
     if(me.user.tipo !== "admin"){ window.location.href = "dashboard.html"; return; }
+    applyProfileVisuals(me.user);
     document.getElementById("usersList").innerHTML = users.map(u =>
       `<div class="list-row">
         <div>

@@ -40,6 +40,7 @@ function addXP(state, amount){
 
 const ICON = {
   home:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4h4v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9"/></svg>`,
+  people:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14a5 5 0 0 1 3 4.6V20"/></svg>`,
   book:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z"/><path d="M4 5.5v16"/><path d="M8 7h8M8 11h6"/></svg>`,
   swords: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 4 6 6M4 5l5-1 1 5"/><path d="m19 4-6 6M20 5l-5-1-1 5"/><path d="m8 16 8-8M16 16l-8-8"/><path d="m5 19 3-3M19 19l-3-3"/></svg>`,
   shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 19 6v5c0 4.5-2.8 7.8-7 10-4.2-2.2-7-5.5-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>`,
@@ -159,6 +160,13 @@ function ensureMobileNavigation(){
 
   const nav = document.querySelector(".bottom-nav ul");
   if(nav){
+    if(document.querySelector(".bottom-nav[data-admin-nav]")){
+      const page = location.pathname.split("/").pop();
+      nav.querySelectorAll("a").forEach(link => {
+        link.classList.toggle("active", link.getAttribute("href") === page);
+      });
+      return;
+    }
     nav.querySelectorAll('a[href="dashboard.html"], a[href="perfil.html"]').forEach(link => link.closest("li")?.remove());
     const required = [
       ["praticar.html", ICON.book, "Praticar"],
@@ -208,6 +216,7 @@ function renderMobileProfile(user){
         <span class="mobile-menu-chevron">⌄</span>
       </button>
       <div class="mobile-user-menu" role="menu">
+        <a href="amizades.html" role="menuitem">Amizades</a>
         <a href="perfil.html" role="menuitem">⚙ Configurações</a>
         <button type="button" role="menuitem" data-mobile-logout>Sair da conta</button>
       </div>`;
@@ -256,6 +265,14 @@ function applyProfileVisuals(user){
   });
   document.querySelectorAll(".avatar").forEach(el => el.dataset.color = user.foto_cor || "azul");
   document.querySelectorAll(".nav").forEach(nav => {
+    if(!nav.querySelector("[data-friends-link]")){
+      const link = document.createElement("a");
+      link.href = "amizades.html";
+      link.dataset.friendsLink = "true";
+      link.innerHTML = `${ICON.people} Amizades`;
+      const profileLink = nav.querySelector('a[href="perfil.html"]');
+      nav.insertBefore(link, profileLink || null);
+    }
     if(user.tipo === "admin" && !nav.querySelector("[data-admin-link]")){
       const link = document.createElement("a");
       link.href = "admin.html";

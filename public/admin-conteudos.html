@@ -38,6 +38,13 @@
     <section class="card on-paper admin-list-card"><div class="card-head"><h2>Conteúdos cadastrados</h2><span class="small-caps" id="materialCount"></span></div><div id="materialsList"></div></section>
   </main>
 </div>
+<nav class="bottom-nav" data-admin-nav>
+  <ul>
+    <li><a href="admin.html">${ICON.shield}<span>Painel</span></a></li>
+    <li><a href="admin-questoes.html">${ICON.book}<span>Questões</span></a></li>
+    <li><a href="admin-conteudos.html" class="active">${ICON.video}<span>Conteúdos</span></a></li>
+  </ul>
+</nav>
 <script src="js/app.js?v=20261123d"></script>
 <script>
   document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, k) => ICON[k] || "");
@@ -46,6 +53,7 @@
   async function loadAdmin(){
     const [me, data] = await Promise.all([api("/api/me"), api("/api/admin/materiais")]);
     if(me.user.tipo !== "admin"){ window.location.href = "dashboard.html"; return; }
+    applyProfileVisuals(me.user);
     materials = data;
     document.getElementById("materialCount").textContent = `${materials.length} cadastrado(s)`;
     document.getElementById("materialsList").innerHTML = materials.map(m =>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestible — Amizades</title>
+<link rel="icon" href="assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=20261125a">
+</head>
+<body style="opacity:0">
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="dashboard.html" aria-label="Ir para o início"><img src="assets/logo.svg" alt="Vestible"></a>
+    <nav class="nav">
+      <a href="praticar.html">${ICON.book} Praticar</a>
+      <a href="duelo.html">${ICON.swords} Batalha</a>
+      <a href="amizades.html" class="active">${ICON.people} Amizades</a>
+      <a href="conteudo.html">${ICON.video} Conteúdo</a>
+      <a href="ranking.html">${ICON.trophy} Ranking</a>
+      <a href="perfil.html">⚙ Configurações</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="row"><div class="avatar" data-bind="initials">--</div><div><div class="name" data-bind="name">Carregando...</div><div class="meta">Nível <span data-bind="level">--</span></div></div></div>
+      <a href="index.html" class="logout-link" data-action="logout">${ICON.logout}</a>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="page-head"><div><h1>Amizades</h1><p class="subtitle">Adicione estudantes e convide-os para batalhas privadas.</p></div></div>
+    <section class="card on-paper friend-code-card">
+      <div><h2>Seu código de amizade</h2><p class="subtitle">Compartilhe este código para que encontrem sua conta.</p></div>
+      <div class="friend-code-row"><strong id="myFriendCode">--------</strong><button class="btn btn-outline" id="copyFriendCode" type="button">Copiar</button></div>
+    </section>
+    <section class="card on-paper friend-add-card">
+      <h2>Enviar pedido</h2>
+      <form id="friendRequestForm" class="friend-request-form">
+        <label class="sr-only" for="friendCodeInput">Código de amizade</label>
+        <input id="friendCodeInput" name="friend_code" placeholder="VST-1A2B3C4D" maxlength="12" autocomplete="off" required>
+        <button class="btn btn-primary" type="submit">Enviar pedido</button>
+      </form>
+    </section>
+    <section class="card on-paper friend-list-card">
+      <div class="card-head"><div><h2>Pedidos recebidos</h2><p class="subtitle">Aceite ou recuse solicitações.</p></div></div>
+      <div id="friendRequests"></div>
+    </section>
+    <section class="card on-paper friend-list-card">
+      <div class="card-head"><div><h2>Meus amigos</h2><p class="subtitle">Seus amigos podem ser convidados para salas privadas.</p></div></div>
+      <div id="friendsList"></div>
+    </section>
+    <section class="card friend-list-card">
+      <div class="card-head"><div><h2>Pedidos enviados</h2></div></div>
+      <div id="sentRequests"></div>
+    </section>
+  </main>
+</div>
+<nav class="bottom-nav">
+  <ul>
+    <li><a href="praticar.html">${ICON.book}<span>Praticar</span></a></li>
+    <li><a href="duelo.html">${ICON.swords}<span>Batalha</span></a></li>
+    <li><a href="conteudo.html">${ICON.video}<span>Conteúdo</span></a></li>
+  </ul>
+</nav>
+<script src="js/app.js?v=20261125a"></script>
+<script>
+requireLogin();
+document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, key) => ICON[key] || "");
+document.body.style.opacity = 1;
+
+let friendsData;
+async function loadFriends() {
+  const [me, data] = await Promise.all([api("/api/me"), api("/api/amigos")]);
+  applyProfileVisuals(me.user);
+  friendsData = data;
+  document.getElementById("myFriendCode").textContent = data.friend_code;
+  document.getElementById("friendRequests").innerHTML = data.received.map(request => `
+    <div class="list-row">
+      <div><div class="title">${escapeHtml(request.nome)}</div><div class="meta">${escapeHtml(request.friend_code)}</div></div>
+      <div><button class="btn btn-primary" data-accept="${request.id_usuario}" type="button">Aceitar</button><button class="btn btn-outline" data-decline="${request.id_usuario}" type="button">Recusar</button></div>
+    </div>`).join("") || `<p class="meta">Você não tem pedidos pendentes.</p>`;
+  document.getElementById("friendsList").innerHTML = data.friends.map(friend => `
+    <div class="list-row">
+      <div><div class="title">${escapeHtml(friend.nome)}</div><div class="meta">${escapeHtml(friend.friend_code)} · Nível ${friend.nivel}</div></div>
+      <div><a class="btn btn-outline" href="duelo.html">Convidar para batalha</a><button class="btn btn-outline" data-remove="${friend.id_usuario}" type="button">Remover</button></div>
+    </div>`).join("") || `<p class="meta">Você ainda não adicionou amigos.</p>`;
+  document.getElementById("sentRequests").innerHTML = data.sent.map(request => `
+    <div class="list-row"><div><div class="title">${escapeHtml(request.nome)}</div><div class="meta">${escapeHtml(request.friend_code)} · Aguardando resposta</div></div></div>
+  `).join("") || `<p class="meta">Nenhum pedido enviado.</p>`;
+}
+
+document.getElementById("copyFriendCode").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(document.getElementById("myFriendCode").textContent);
+    showToast("Código copiado.");
+  } catch (error) {
+    showToast("Não foi possível copiar. Selecione e copie o código manualmente.");
+  }
+});
+document.getElementById("friendRequestForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  try {
+    const result = await api("/api/amigos/solicitacoes", {
+      method: "POST",
+      body: JSON.stringify({ friend_code: form.friend_code.value })
+    });
+    showToast(result.message);
+    form.reset();
+    await loadFriends();
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+document.addEventListener("click", async event => {
+  const button = event.target.closest("[data-accept], [data-decline], [data-remove]");
+  if (!button) return;
+  try {
+    let result;
+    if (button.dataset.accept) {
+      result = await api(`/api/amigos/solicitacoes/${button.dataset.accept}/aceitar`, { method: "POST" });
+    } else if (button.dataset.decline) {
+      result = await api(`/api/amigos/solicitacoes/${button.dataset.decline}`, { method: "DELETE" });
+    } else {
+      const friend = friendsData.friends.find(item => item.id_usuario === Number(button.dataset.remove));
+      if (!window.confirm(`Remover ${friend?.nome || "este amigo"} da sua lista?`)) return;
+      result = await api(`/api/amigos/${button.dataset.remove}`, { method: "DELETE" });
+    }
+    showToast(result.message);
+    await loadFriends();
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+loadFriends().catch(error => {
+  showToast(error.message);
+  if (error.status === 401) window.location.href = "index.html";
+});
+</script>
+</body>
+</html>

@@ -73,7 +73,9 @@ Desenvolver uma plataforma web responsiva que apoie a prática de questões e o 
 
 ### Modo Batalha
 
-- partida em tempo real por meio de WebSocket;
+- pareamento aleatório ranqueado em tempo real por meio de WebSocket;
+- criação de salas privadas com código de seis caracteres;
+- convite direto para amigos conectados ou compartilhamento do código da sala;
 - modos **Conhecimento** e **Blitz**;
 - períodos configuráveis de 1 a 5 minutos no modo Blitz;
 - dez questões comuns para ambos os participantes;
@@ -87,6 +89,7 @@ Desenvolver uma plataforma web responsiva que apoie a prática de questões e o 
 - atualização de nome, cor e avatar;
 - alteração de senha;
 - exclusão da conta com proteção por confirmação;
+- pedidos de amizade por código único, com opções para aceitar, recusar e remover amizades;
 - modos para protanopia, deuteranopia e tritanopia;
 - opção de redução de movimento;
 - animação opcional da sequência de estudos;
@@ -124,6 +127,7 @@ Servidor Node.js
           ▼
 Banco SQLite
 ├── Usuários
+├── Amizades e códigos de amizade
 ├── Desempenho
 ├── Questões
 ├── Respostas
@@ -200,7 +204,7 @@ Vestible/
 3. O estudante escolhe uma disciplina e responde às questões.
 4. O servidor valida a alternativa e atualiza o perfil e o desempenho.
 5. Acertos concedem XP; erros exibem materiais relacionados ao tema.
-6. O usuário pode iniciar uma batalha por fila ou abrir uma sala pública.
+6. O usuário pode buscar um oponente aleatório ou criar/entrar em uma sala privada por código.
 7. Ao final da partida, o sistema apresenta vencedor, empate ou desistência.
 8. Administradores podem gerenciar questões, conteúdos e contas.
 
@@ -271,6 +275,8 @@ No celular:
 - o cabeçalho contém o logotipo da aplicação e o menu da conta;
 - o avatar dá acesso às configurações e à saída da conta;
 - a barra inferior oferece Praticar, Batalha e Conteúdo;
+- a área de administração possui uma barra inferior para alternar entre painel, questões e conteúdos;
+- amizades ficam acessíveis pelo menu da conta;
 - Início e Perfil são acessados pelo cabeçalho e pelo menu superior;
 - o conteúdo utiliza espaçamentos e componentes dimensionados para interação por toque.
 
@@ -306,7 +312,7 @@ Possíveis evoluções do Vestible incluem:
 - análise estatística detalhada por disciplina e tema;
 - recomendação automática de conteúdo a partir do histórico de erros;
 - metas semanais e desafios personalizados;
-- modo cooperativo e sistemas de amistades;
+- modo cooperativo e convites persistentes para amigos offline;
 - publicação em ambiente de nuvem;
 - pipeline de integração e entrega contínuas;
 - testes automatizados adicionais para interface e casos de acessibilidade.

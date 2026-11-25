@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS usuario (
   id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
   nome TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
+  friend_code TEXT NOT NULL UNIQUE,
   senha TEXT NOT NULL,
   xp INTEGER NOT NULL DEFAULT 0 CHECK (xp >= 0),
   nivel INTEGER NOT NULL DEFAULT 1 CHECK (nivel > 0),
@@ -153,6 +154,22 @@ const usuarioColumns = db.prepare("PRAGMA table_info(usuario)").all();
 if (!usuarioColumns.some((column) => column.name === "tipo")) {
   db.exec("ALTER TABLE usuario ADD COLUMN tipo TEXT NOT NULL DEFAULT 'aluno' CHECK (tipo IN ('aluno','admin'))");
 }
+if (!usuarioColumns.some((column) => column.name === "friend_code")) {
+  db.exec("ALTER TABLE usuario ADD COLUMN friend_code TEXT");
+}
+function generateFriendCode() {
+  return `VST-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+}
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_usuario_friend_code ON usuario(friend_code)");
+const usersWithoutFriendCode = db.prepare("SELECT id_usuario FROM usuario WHERE friend_code IS NULL OR friend_code = ''").all();
+const setFriendCode = db.prepare("UPDATE usuario SET friend_code = ? WHERE id_usuario = ?");
+for (const user of usersWithoutFriendCode) {
+  let code;
+  do {
+    code = generateFriendCode();
+  } while (db.prepare("SELECT 1 FROM usuario WHERE friend_code = ?").get(code));
+  setFriendCode.run(code, user.id_usuario);
+}
 const usuarioColumnsAfter = db.prepare("PRAGMA table_info(usuario)").all();
 if (!usuarioColumnsAfter.some((column) => column.name === "foto_cor")) {
   db.exec("ALTER TABLE usuario ADD COLUMN foto_cor TEXT NOT NULL DEFAULT 'azul'");
@@ -209,12 +226,12 @@ if (questionCount === 0) {
       ["Professor 2", "prof2@vestible.com", "Vestible@123", "aluno"]
     ];
     const insertUser = db.prepare(`
-      INSERT INTO usuario (nome, email, senha, tipo, email_verificado)
-      VALUES (?, ?, ?, ?, 1)
+      INSERT INTO usuario (nome, email, senha, friend_code, tipo, email_verificado)
+      VALUES (?, ?, ?, ?, ?, 1)
     `);
     const insertPerformance = db.prepare("INSERT INTO desempenho (id_usuario) VALUES (?)");
     for (const [nome, email, password, tipo] of seedUsers) {
-      const result = insertUser.run(nome, email, bcrypt.hashSync(password, 10), tipo);
+      const result = insertUser.run(nome, email, bcrypt.hashSync(password, 10), generateFriendCode(), tipo);
       insertPerformance.run(result.lastInsertRowid);
     }
 
@@ -549,6 +566,7 @@ function publicUser(user) {
     questoes_feitas_hoje: user.questoes_feitas_hoje,
     foto_cor: user.foto_cor || "azul",
     foto_avatar: user.foto_avatar || null,
+    friend_code: user.friend_code,
     email_verificado: Boolean(user.email_verificado),
     modo_daltonismo: user.modo_daltonismo || "nenhum",
     reducao_movimento: Boolean(user.reducao_movimento),
@@ -622,9 +640,9 @@ app.post("/api/auth/register", async (req, res) => {
     const register = db.transaction(() => {
       const result = db.prepare(`
         INSERT INTO usuario
-        (nome, email, senha, tipo, email_verificado)
-        VALUES (?, ?, ?, 'aluno', 1)
-      `).run(nome, email, bcrypt.hashSync(senha, 10));
+        (nome, email, senha, friend_code, tipo, email_verificado)
+        VALUES (?, ?, ?, ?, 'aluno', 1)
+      `).run(nome, email, bcrypt.hashSync(senha, 10), generateFriendCode());
       db.prepare("INSERT INTO desempenho (id_usuario) VALUES (?)").run(result.lastInsertRowid);
       return db.prepare("SELECT * FROM usuario WHERE id_usuario = ?").get(result.lastInsertRowid);
     });
@@ -672,6 +690,112 @@ app.post("/api/auth/logout", (req, res) => {
 app.get("/api/me", authRequired, (req, res) => {
   const performance = db.prepare("SELECT * FROM desempenho WHERE id_usuario = ?").get(req.user.id_usuario);
   res.json({ user: publicUser(req.user), desempenho: performance });
+});
+
+app.get("/api/amigos", authRequired, (req, res) => {
+  const userId = req.user.id_usuario;
+  const friends = db.prepare(`
+    SELECT u.id_usuario, u.nome, u.friend_code, u.nivel, u.foto_cor, u.foto_avatar
+    FROM amizade a
+    JOIN usuario u ON u.id_usuario = CASE
+      WHEN a.id_usuario_solicitante = ? THEN a.id_usuario_solicitado
+      ELSE a.id_usuario_solicitante
+    END
+    WHERE (a.id_usuario_solicitante = ? OR a.id_usuario_solicitado = ?)
+      AND a.status = 'Aceita'
+    ORDER BY u.nome COLLATE NOCASE
+  `).all(userId, userId, userId);
+  const received = db.prepare(`
+    SELECT u.id_usuario, u.nome, u.friend_code, a.data_inicio
+    FROM amizade a JOIN usuario u ON u.id_usuario = a.id_usuario_solicitante
+    WHERE a.id_usuario_solicitado = ? AND a.status = 'Pendente'
+    ORDER BY a.data_inicio
+  `).all(userId);
+  const sent = db.prepare(`
+    SELECT u.id_usuario, u.nome, u.friend_code, a.data_inicio
+    FROM amizade a JOIN usuario u ON u.id_usuario = a.id_usuario_solicitado
+    WHERE a.id_usuario_solicitante = ? AND a.status = 'Pendente'
+    ORDER BY a.data_inicio
+  `).all(userId);
+  res.json({ friend_code: req.user.friend_code, friends, received, sent });
+});
+
+app.post("/api/amigos/solicitacoes", authRequired, (req, res) => {
+  const code = String(req.body.friend_code || "").trim().toUpperCase();
+  if (!/^VST-[A-F0-9]{8}$/.test(code)) {
+    return res.status(400).json({ error: "Informe um código de amizade válido." });
+  }
+  const target = db.prepare("SELECT id_usuario, nome FROM usuario WHERE friend_code = ? AND conta_excluida = 0").get(code);
+  if (!target) return res.status(404).json({ error: "Não encontramos uma conta com esse código." });
+  if (target.id_usuario === req.user.id_usuario) {
+    return res.status(400).json({ error: "Você não pode enviar um pedido para si mesmo." });
+  }
+  const existing = db.prepare(`
+    SELECT id_usuario_solicitante, id_usuario_solicitado, status
+    FROM amizade
+    WHERE (id_usuario_solicitante = ? AND id_usuario_solicitado = ?)
+       OR (id_usuario_solicitante = ? AND id_usuario_solicitado = ?)
+  `).get(req.user.id_usuario, target.id_usuario, target.id_usuario, req.user.id_usuario);
+  if (existing?.status === "Aceita") return res.status(409).json({ error: "Vocês já são amigos." });
+  if (existing?.status === "Pendente") {
+    return res.status(409).json({
+      error: existing.id_usuario_solicitado === req.user.id_usuario
+        ? "Essa pessoa já enviou um pedido para você. Aceite-o na sua lista de solicitações."
+        : "Você já enviou um pedido para essa pessoa."
+    });
+  }
+  try {
+    db.prepare(`
+      INSERT INTO amizade (id_usuario_solicitante, id_usuario_solicitado, status)
+      VALUES (?, ?, 'Pendente')
+    `).run(req.user.id_usuario, target.id_usuario);
+    res.status(201).json({ message: `Pedido enviado para ${target.nome}.` });
+  } catch (error) {
+    console.error("[Vestible] Falha ao enviar pedido de amizade:", error);
+    res.status(500).json({ error: "Não foi possível enviar o pedido de amizade." });
+  }
+});
+
+app.post("/api/amigos/solicitacoes/:id/aceitar", authRequired, (req, res) => {
+  const requesterId = Number(req.params.id);
+  if (!Number.isInteger(requesterId) || requesterId <= 0) {
+    return res.status(400).json({ error: "Solicitação inválida." });
+  }
+  const result = db.prepare(`
+    UPDATE amizade SET status = 'Aceita'
+    WHERE id_usuario_solicitante = ? AND id_usuario_solicitado = ? AND status = 'Pendente'
+  `).run(requesterId, req.user.id_usuario);
+  if (!result.changes) return res.status(404).json({ error: "Solicitação pendente não encontrada." });
+  res.json({ ok: true, message: "Pedido de amizade aceito." });
+});
+
+app.delete("/api/amigos/solicitacoes/:id", authRequired, (req, res) => {
+  const requesterId = Number(req.params.id);
+  if (!Number.isInteger(requesterId) || requesterId <= 0) {
+    return res.status(400).json({ error: "Solicitação inválida." });
+  }
+  const result = db.prepare(`
+    DELETE FROM amizade
+    WHERE id_usuario_solicitante = ? AND id_usuario_solicitado = ? AND status = 'Pendente'
+  `).run(requesterId, req.user.id_usuario);
+  if (!result.changes) return res.status(404).json({ error: "Solicitação pendente não encontrada." });
+  res.json({ ok: true, message: "Solicitação recusada." });
+});
+
+app.delete("/api/amigos/:id", authRequired, (req, res) => {
+  const friendId = Number(req.params.id);
+  if (!Number.isInteger(friendId) || friendId <= 0) {
+    return res.status(400).json({ error: "Amigo inválido." });
+  }
+  const result = db.prepare(`
+    DELETE FROM amizade
+    WHERE status = 'Aceita' AND (
+      (id_usuario_solicitante = ? AND id_usuario_solicitado = ?)
+      OR (id_usuario_solicitante = ? AND id_usuario_solicitado = ?)
+    )
+  `).run(req.user.id_usuario, friendId, friendId, req.user.id_usuario);
+  if (!result.changes) return res.status(404).json({ error: "Amizade não encontrada." });
+  res.json({ ok: true, message: "Amizade removida." });
 });
 
 app.put("/api/me", authRequired, (req, res) => {
@@ -1102,13 +1226,14 @@ const io = new Server(httpServer, { cors: { origin: false } });
 
 const duelQueues = new Map();
 const activeDuels = new Map();
+const pendingRooms = new Map();
 
 function createRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code;
   do {
     code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  } while (activeDuels.has(code));
+  } while (activeDuels.has(code) || pendingRooms.has(code));
   return code;
 }
 
@@ -1435,6 +1560,94 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("duelo_criar_sala", ({ mode, duration } = {}) => {
+    if (!socket.duelUser) return socket.emit("duelo_erro", "Autenticação obrigatória.");
+    const normalizedMode = mode === "blitz" ? "blitz" : "conhecimento";
+    const normalizedDuration = normalizedMode === "blitz"
+      ? Math.min(5, Math.max(1, Number(duration) || 1)) * 60
+      : null;
+    const code = createRoomCode();
+    pendingRooms.set(code, {
+      code,
+      mode: normalizedMode,
+      duration: normalizedDuration,
+      hostSocketId: socket.id,
+      hostUserId: socket.duelUser.id_usuario
+    });
+    socket.emit("duelo_sala_criada", { code, mode: normalizedMode, duration: normalizedDuration });
+  });
+
+  socket.on("duelo_entrar_sala", ({ code } = {}) => {
+    if (!socket.duelUser) return socket.emit("duelo_erro", "Autenticação obrigatória.");
+    const normalizedCode = String(code || "").trim().toUpperCase();
+    const room = pendingRooms.get(normalizedCode);
+    if (!room) return socket.emit("duelo_erro", "Sala não encontrada ou partida já iniciada.");
+    if (room.hostUserId === socket.duelUser.id_usuario) {
+      return socket.emit("duelo_erro", "Você não pode entrar na própria sala.");
+    }
+    const host = db.prepare("SELECT * FROM usuario WHERE id_usuario = ? AND conta_excluida = 0").get(room.hostUserId);
+    if (!host) {
+      pendingRooms.delete(normalizedCode);
+      return socket.emit("duelo_erro", "O criador da sala não está mais disponível.");
+    }
+    pendingRooms.delete(normalizedCode);
+    const match = {
+      code: normalizedCode,
+      mode: room.mode,
+      duration: room.duration,
+      players: [
+        { socketId: room.hostSocketId, user: host, respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() },
+        { socketId: socket.id, user: socket.duelUser, respostas: 0, acertos: 0, tempo_total: 0, ultimo_resposta: null, respondidas: new Set() }
+      ],
+      finished: false,
+      timer: null,
+      result: null
+    };
+    startDuel(match);
+  });
+
+  socket.on("duelo_convidar", ({ code, userId } = {}) => {
+    if (!socket.duelUser) return socket.emit("duelo_erro", "Autenticação obrigatória.");
+    const normalizedCode = String(code || "").trim().toUpperCase();
+    const room = pendingRooms.get(normalizedCode);
+    const targetId = Number(userId);
+    if (!room || room.hostSocketId !== socket.id) {
+      return socket.emit("duelo_erro", "Crie uma sala antes de enviar convites.");
+    }
+    if (!Number.isInteger(targetId) || targetId <= 0 || targetId === socket.duelUser.id_usuario) {
+      return socket.emit("duelo_erro", "Amigo inválido.");
+    }
+    const isFriend = db.prepare(`
+      SELECT 1 FROM amizade
+      WHERE status = 'Aceita' AND (
+        (id_usuario_solicitante = ? AND id_usuario_solicitado = ?)
+        OR (id_usuario_solicitante = ? AND id_usuario_solicitado = ?)
+      )
+    `).get(socket.duelUser.id_usuario, targetId, targetId, socket.duelUser.id_usuario);
+    if (!isFriend) return socket.emit("duelo_erro", "Você só pode convidar amigos aceitos.");
+    const target = db.prepare("SELECT id_usuario, nome FROM usuario WHERE id_usuario = ? AND conta_excluida = 0").get(targetId);
+    if (!target) return socket.emit("duelo_erro", "Esse amigo não está mais disponível.");
+    const targetSocket = [...io.sockets.sockets.values()].find((candidate) =>
+      candidate.duelUser?.id_usuario === targetId
+    );
+    if (!targetSocket) {
+      return socket.emit("duelo_erro", `${target.nome} está offline. Compartilhe o código da sala.`);
+    }
+    targetSocket.emit("duelo_convite", {
+      code: normalizedCode,
+      mode: room.mode,
+      duration: room.duration,
+      host: { id_usuario: socket.duelUser.id_usuario, nome: socket.duelUser.nome }
+    });
+    socket.emit("duelo_convite_enviado", { nome: target.nome });
+  });
+
+  socket.on("duelo_cancelar_sala", ({ code } = {}) => {
+    const normalizedCode = String(code || "").trim().toUpperCase();
+    const room = pendingRooms.get(normalizedCode);
+    if (room?.hostSocketId === socket.id) pendingRooms.delete(normalizedCode);
+  });
+
   socket.on("duelo_cancelar", () => {
     for (const queue of duelQueues.values()) {
       const index = queue.findIndex((entry) => entry.socketId === socket.id);
@@ -1486,6 +1699,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    for (const [code, room] of pendingRooms) {
+      if (room.hostSocketId === socket.id) pendingRooms.delete(code);
+    }
     for (const queue of duelQueues.values()) {
       const index = queue.findIndex((entry) => entry.socketId === socket.id);
       if (index >= 0) queue.splice(index, 1);
