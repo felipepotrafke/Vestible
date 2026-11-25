@@ -142,6 +142,8 @@ button{font-family:inherit;cursor:pointer;}
 .friend-request-form{display:flex;gap:10px;margin-top:16px;}
 .friend-request-form input{flex:1;min-width:0;padding:13px 15px;border:1px solid var(--line);border-radius:var(--radius-s);font:inherit;text-transform:uppercase;}
 .friend-list-card .list-row > div:last-child{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.friend-user{display:flex;align-items:center;gap:12px;min-width:0;}
+.friend-avatar{width:42px;height:42px;font-size:.9rem;}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 .admin-shortcut{display:flex;align-items:center;gap:14px;color:var(--navy-900);transition:transform .15s ease,border-color .15s ease;}
 .admin-shortcut:hover{transform:translateY(-2px);border-color:var(--gold);}

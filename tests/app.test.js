@@ -4,6 +4,7 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const vm = require("node:vm");
 const { io } = require("socket.io-client");
 
 const port = 32123 + Math.floor(Math.random() * 100);
@@ -75,6 +76,7 @@ test("layout móvel inclui batalha, perfil, avatar e saída da conta", () => {
   assert.match(app, /perfil\.html/);
   assert.match(app, /data-mobile-logout/);
   assert.match(app, /renderMobileProfile/);
+  assert.match(app, /nav\.querySelector\('a\[href="amizades\.html"\]'\)/);
   assert.match(css, /@media \(max-width:820px\)/);
   assert.match(css, /\.bottom-nav/);
   assert.match(css, /a\[href="dashboard\.html"\]/);
@@ -85,6 +87,33 @@ test("layout móvel inclui batalha, perfil, avatar e saída da conta", () => {
     const page = fs.readFileSync(path.resolve(__dirname, `../public/${pageName}`), "utf8");
     assert.match(page, /class="bottom-nav" data-admin-nav/);
   }
+  const friendships = fs.readFileSync(path.resolve(__dirname, "../public/amizades.html"), "utf8");
+  assert.equal((friendships.match(/href="amizades\.html"/g) || []).length, 1);
+  assert.match(friendships, /friendAvatarMarkup\(friend\)/);
+  assert.match(friendships, /friend\.foto_avatar/);
+});
+
+test("XP lateral reflete o perfil atual e o progresso do nível", () => {
+  const values = {
+    "[data-bind='xp']": [{ textContent: "" }],
+    "[data-bind='xp-fraction']": [{ textContent: "" }],
+    "[data-bind='xp-fill']": [{ style: { width: "" } }]
+  };
+  const context = {
+    document: {
+      addEventListener() {},
+      querySelectorAll(selector) { return values[selector] || []; }
+    }
+  };
+  const app = fs.readFileSync(path.resolve(__dirname, "../public/js/app.js"), "utf8");
+  vm.runInNewContext(app, context);
+  context.applyAccessibilityPreferences = () => {};
+  context.renderMobileProfile = () => {};
+  vm.runInNewContext("applyProfileVisuals({ xp: 2345, nome: 'Estudante' })", context);
+
+  assert.equal(values["[data-bind='xp']"][0].textContent, 2345);
+  assert.equal(values["[data-bind='xp-fraction']"][0].textContent, "345/1000");
+  assert.equal(values["[data-bind='xp-fill']"][0].style.width, "34.5%");
 });
 
 test("banco possui matérias e assuntos específicos válidos", async () => {
@@ -185,6 +214,12 @@ test("pedidos de amizade usam código único e podem ser aceitos, recusados ou r
   const [first, second] = users;
   const firstHeaders = { Authorization: `Bearer ${first.token}` };
   const secondHeaders = { Authorization: `Bearer ${second.token}` };
+  const profileUpdated = await request(`${baseUrl}/api/me`, {
+    method: "PUT",
+    headers: secondHeaders,
+    body: JSON.stringify({ nome: second.user.nome, foto_cor: "roxo", foto_avatar: "h2" })
+  });
+  assert.equal(profileUpdated.response.status, 200);
 
   const sent = await request(`${baseUrl}/api/amigos/solicitacoes`, {
     method: "POST",
@@ -210,6 +245,8 @@ test("pedidos de amizade usam código único e podem ser aceitos, recusados ou r
 
   const friendList = await request(`${baseUrl}/api/amigos`, { headers: firstHeaders });
   assert.equal(friendList.body.friends[0].id_usuario, second.user.id_usuario);
+  assert.equal(friendList.body.friends[0].foto_avatar, "h2");
+  assert.equal(friendList.body.friends[0].foto_cor, "roxo");
   const removed = await request(`${baseUrl}/api/amigos/${second.user.id_usuario}`, {
     method: "DELETE",
     headers: firstHeaders

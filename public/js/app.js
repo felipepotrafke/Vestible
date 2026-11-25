@@ -69,12 +69,19 @@ function renderUserWidget(){
   document.querySelectorAll("[data-bind='level']").forEach(el => el.textContent = s.level);
   document.querySelectorAll("[data-bind='streak']").forEach(el => el.textContent = s.streak);
   document.querySelectorAll("[data-bind='ranking']").forEach(el => el.textContent = "#" + s.ranking);
-  document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent = s.xp);
-  document.querySelectorAll("[data-bind='xp-fraction']").forEach(el => el.textContent = `${s.xp}/${XP_PER_LEVEL}`);
-  document.querySelectorAll("[data-bind='xp-fill']").forEach(el => el.style.width = Math.min(100,(s.xp/XP_PER_LEVEL)*100) + "%");
+  renderXPProgress(s);
   document.querySelectorAll("[data-bind='questions-done']").forEach(el => el.textContent = s.questionsDone);
   document.querySelectorAll("[data-bind='questions-goal']").forEach(el => el.textContent = s.questionsGoal);
   return s;
+}
+
+function renderXPProgress(user){
+  const xp = Number(user?.xp);
+  const totalXP = Number.isFinite(xp) && xp > 0 ? xp : 0;
+  const currentXP = totalXP % XP_PER_LEVEL;
+  document.querySelectorAll("[data-bind='xp']").forEach(el => el.textContent = totalXP);
+  document.querySelectorAll("[data-bind='xp-fraction']").forEach(el => el.textContent = `${currentXP}/${XP_PER_LEVEL}`);
+  document.querySelectorAll("[data-bind='xp-fill']").forEach(el => el.style.width = `${(currentXP / XP_PER_LEVEL) * 100}%`);
 }
 
 function showToast(message){
@@ -265,7 +272,7 @@ function applyProfileVisuals(user){
   });
   document.querySelectorAll(".avatar").forEach(el => el.dataset.color = user.foto_cor || "azul");
   document.querySelectorAll(".nav").forEach(nav => {
-    if(!nav.querySelector("[data-friends-link]")){
+    if(!nav.querySelector('a[href="amizades.html"]')){
       const link = document.createElement("a");
       link.href = "amizades.html";
       link.dataset.friendsLink = "true";
@@ -281,6 +288,7 @@ function applyProfileVisuals(user){
       nav.appendChild(link);
     }
   });
+  renderXPProgress(user);
 }
 
 async function logout(){

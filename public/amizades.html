@@ -6,7 +6,7 @@
 <title>Vestible — Amizades</title>
 <link rel="icon" href="assets/logo.svg">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261125a">
+<link rel="stylesheet" href="css/style.css?v=20261125b">
 </head>
 <body style="opacity:0">
 <div class="app">
@@ -60,13 +60,21 @@
     <li><a href="conteudo.html">${ICON.video}<span>Conteúdo</span></a></li>
   </ul>
 </nav>
-<script src="js/app.js?v=20261125a"></script>
+<script src="js/app.js?v=20261125b"></script>
 <script>
 requireLogin();
 document.body.innerHTML = document.body.innerHTML.replace(/\$\{ICON\.(\w+)\}/g, (_, key) => ICON[key] || "");
 document.body.style.opacity = 1;
 
 let friendsData;
+function friendAvatarMarkup(friend) {
+  const initials = friend.nome.split(" ").filter(Boolean).map(word => word[0]).slice(0, 2).join("").toUpperCase();
+  const avatar = friend.foto_avatar
+    ? `<img src="assets/avatar/${encodeURIComponent(friend.foto_avatar)}.png" alt="Foto de perfil de ${escapeHtml(friend.nome)}">`
+    : escapeHtml(initials);
+  return `<div class="avatar friend-avatar${friend.foto_avatar ? " has-avatar" : ""}" data-color="${escapeHtml(friend.foto_cor || "azul")}">${avatar}</div>`;
+}
+
 async function loadFriends() {
   const [me, data] = await Promise.all([api("/api/me"), api("/api/amigos")]);
   applyProfileVisuals(me.user);
@@ -79,7 +87,7 @@ async function loadFriends() {
     </div>`).join("") || `<p class="meta">Você não tem pedidos pendentes.</p>`;
   document.getElementById("friendsList").innerHTML = data.friends.map(friend => `
     <div class="list-row">
-      <div><div class="title">${escapeHtml(friend.nome)}</div><div class="meta">${escapeHtml(friend.friend_code)} · Nível ${friend.nivel}</div></div>
+      <div class="friend-user">${friendAvatarMarkup(friend)}<div><div class="title">${escapeHtml(friend.nome)}</div><div class="meta">${escapeHtml(friend.friend_code)} · Nível ${friend.nivel}</div></div></div>
       <div><a class="btn btn-outline" href="duelo.html">Convidar para batalha</a><button class="btn btn-outline" data-remove="${friend.id_usuario}" type="button">Remover</button></div>
     </div>`).join("") || `<p class="meta">Você ainda não adicionou amigos.</p>`;
   document.getElementById("sentRequests").innerHTML = data.sent.map(request => `
